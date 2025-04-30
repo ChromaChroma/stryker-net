@@ -149,6 +149,9 @@ public class StrykerCli
 
     private void RunStryker(IStrykerInputs inputs)
     {
+        var logger = ApplicationLogging.LoggerFactory.CreateLogger<StrykerCli>();
+        logger.LogInformation("%%%%%% Initial test Log %%%%%%");
+
         var result = _stryker.RunMutationTest(inputs, ApplicationLogging.LoggerFactory);
 
         HandleStrykerRunResult(inputs, result);

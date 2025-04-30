@@ -88,6 +88,8 @@ public class CsharpMutantOrchestrator : BaseMutantOrchestrator<SyntaxTree, Seman
         new StatementSpecificOrchestrator<StatementSyntax>(),
         new ExpressionSpecificOrchestrator<ExpressionSyntax>(),
         new SyntaxNodeOrchestrator()
+
+        // new MethodDeclarationOrchestrator(),
     ];
 
     private static List<IMutator> DefaultMutatorList() =>
@@ -118,6 +120,8 @@ public class CsharpMutantOrchestrator : BaseMutantOrchestrator<SyntaxTree, Seman
         new MathMutator(),
         new IsPatternExpressionMutator(),
         new CollectionExpressionMutator(),
+        // Memoization
+        // new MemoizationMutator(),
     ];
 
     private IEnumerable<IMutator> Mutators { get; }

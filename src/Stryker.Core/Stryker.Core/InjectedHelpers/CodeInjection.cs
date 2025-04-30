@@ -49,7 +49,7 @@ public class CodeInjection
 
     private static string GetRandomNamespace()
     {
-        // Create a string of characters and numbers allowed in the namespace  
+        // Create a string of characters and numbers allowed in the namespace
         const string ValidChars = "ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         var random = new Random();
 
@@ -59,6 +59,21 @@ public class CodeInjection
             chars[i] = ValidChars[random.Next(0, ValidChars.Length)];
         }
         return StrykerNamespace + new string(chars);
+    }
+
+    public static string GetRandomVariableName()
+    {
+        // Create a string of characters and numbers allowed in the namespace
+        const string ValidChars = "ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        var random = new Random();
+
+        var chars = new char[15];
+        chars[0] = ValidChars[random.Next(0, ValidChars.Length-10)]; // First char cannot be number
+        for (var i = 1; i < 15; i++)
+        {
+            chars[i] = ValidChars[random.Next(0, ValidChars.Length)];
+        }
+        return "memoized_value__" + new string(chars);
     }
 
     public IDictionary<string, string> MutantHelpers { get; } = new Dictionary<string, string>();

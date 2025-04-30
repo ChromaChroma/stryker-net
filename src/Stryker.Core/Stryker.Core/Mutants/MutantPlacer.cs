@@ -4,8 +4,13 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.Extensions.Logging;
+using Stryker.Abstractions;
+using Stryker.Core.Helpers;
 using Stryker.Core.InjectedHelpers;
 using Stryker.Core.Instrumentation;
+using Stryker.Core.Memoization;
+using Stryker.Utilities.Logging;
 
 namespace Stryker.Core.Mutants;
 
@@ -28,6 +33,7 @@ public class MutantPlacer
     private static readonly ConditionalInstrumentationEngine ConditionalEngine = new();
     private static readonly EndingReturnEngine EndingReturnEngine = new();
     private static readonly DefaultInitializationEngine DefaultInitializationEngine = new();
+    private static readonly MemoizationInstrumentationEngine MemoizationInstrumentationEngine = new();
 
     private readonly CodeInjection _injection;
     private ExpressionSyntax _binaryExpression;
@@ -129,6 +135,67 @@ public class MutantPlacer
                 // Mark this node as a MutationConditional node. Store the MutantId in the annotation to retrace the mutant later
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationIdMarker, mutationInfo.mutant.Id.ToString()))
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationTypeMarker, mutationInfo.mutant.Mutation.Type.ToString())));
+
+    // public MethodDeclarationSyntax InjectMemoizationMutation(MethodDeclarationSyntax original,
+    //     Mutation mutant
+    //     // MethodDeclarationSyntax mutation
+    //     )
+    // {
+    //     original.AddBodyStatements()
+    //     mutant.ReplacementNode;
+    //     // return mutation;
+    // }
+
+
+    /// <summary>
+    /// Add one or more mutations controlled via one or more ternary operators
+    /// </summary>
+    /// <param name="original">original expression (will be used to generate mutations)</param>
+    /// <param name="mutants">list of mutations to inject</param>
+    /// <param name="mutant"></param>
+    /// <returns>a ternary expression (or a chain of ternary expression) containing the mutant(s) and the original node.</returns>
+    public MethodDeclarationSyntax PlaceMemoizationControlledMutations(
+            MethodDeclarationSyntax original,
+            Mutant mutant
+            // ,IEnumerable<(Mutant mutant, ExpressionSyntax mutation)> mutants
+            )
+    {
+            Func<string, object> f = (string s) => null;
+            var logger = ApplicationLogging.LoggerFactory.CreateLogger<MutantPlacer>();
+
+
+            var returnType = original.ReturnType;
+            if (returnType.IsVoid())
+            {
+                logger.LogInformation($"MutantPlacer:: Return type is void and cannot be memoized (aside from sideeffectfull code).");
+                return original;
+            }
+
+            var n = mutant.Mutation.ReplacementNode;
+            if (n is not LiteralExpressionSyntax syntax || !syntax.Token.IsKind(SyntaxKind.StringLiteralToken))
+            {
+                logger.LogInformation($"MutantPlacer:: {n}");
+                return original;
+            }
+            var originalBody = original.Body ?? GenerateBlockBody(original.ExpressionBody?.Expression, original.ReturnType);
+
+
+
+            var b = MemoizationInstrumentationEngine.PlaceWithMemoizationStatement(returnType, originalBody, syntax)
+                .WithAdditionalAnnotations(new SyntaxAnnotation(MutationIdMarker, mutant.Id.ToString()))
+                .WithAdditionalAnnotations(new SyntaxAnnotation(MutationTypeMarker, mutant.Mutation.Type.ToString()));
+            return original.WithBody(b);
+        }
+
+        private static BlockSyntax GenerateBlockBody(ExpressionSyntax expressionBody, TypeSyntax returnType)
+        {
+            StatementSyntax statementLine = returnType.IsVoid()
+                ? SyntaxFactory.ExpressionStatement(expressionBody)
+                : SyntaxFactory.ReturnStatement(expressionBody.WithLeadingTrivia(SyntaxFactory.Space));
+
+            var result = SyntaxFactory.Block(statementLine);
+            return result;
+        }
 
     /// <summary>
     /// Removes the mutant (or injected code) from the syntax node

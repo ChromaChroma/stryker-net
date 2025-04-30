@@ -41,5 +41,8 @@ public enum Mutator
     [MutatorDescription("Conditional operators")]
     Conditional,
     [MutatorDescription("Collection expressions")]
-    CollectionExpression
+    CollectionExpression,
+
+    [MutatorDescription("Memoization")]
+    Memoization
 }

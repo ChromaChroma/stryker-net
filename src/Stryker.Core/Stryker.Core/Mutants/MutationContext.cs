@@ -9,7 +9,7 @@ namespace Stryker.Core.Mutants;
 /// <summary>
 /// Describe the (syntax tree) context during mutation and ensure proper mutation injection.
 /// It has several responsibilities:
-/// 1) It is in charge of storing mutations as they are generated, inject them at the appropriate syntax level.  
+/// 1) It is in charge of storing mutations as they are generated, inject them at the appropriate syntax level.
 /// 2) it also tracks mutator disabled via comments and restores them at adequate times
 /// </summary>
 ///
@@ -174,6 +174,17 @@ internal class MutationContext
     /// <returns>A mutated node containing the mutations.</returns>
     public StatementSyntax InjectMutations(StatementSyntax mutatedNode, StatementSyntax sourceNode)
         => _mutation.Inject(mutatedNode, sourceNode);
+
+
+    // /// <summary>
+    // /// Injects pending statement level mutations.
+    // /// </summary>
+    // /// <param name="mutatedNode">Target node that will contain the mutations</param>
+    // /// <param name="sourceNode">Source node, used to generate mutations</param>
+    // /// <returns>A mutated node containing the mutations.</returns>
+    public MethodDeclarationSyntax InjectMemoizationMutation(MethodDeclarationSyntax mutatedNode, MethodDeclarationSyntax sourceNode)
+        => _mutation.InjectMemoizationMutation(mutatedNode, sourceNode);
+
 
     /// <summary>
     /// Injects pending block level mutations.
