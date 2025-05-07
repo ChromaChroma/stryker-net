@@ -8,40 +8,18 @@ using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace Stryker.Core.Memoization;
 
-/// <summary>
-/// Injects a mutation controlled by a conditional operator.
-/// </summary>
+
 internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
 {
-    private static BlockSyntax AsBlock(StatementSyntax code) => code as BlockSyntax ?? Block(code);
-
-    // /// <summary>
-    // /// Injects a conditional operator with the original code or the mutated one, depending on condition's result.
-    // /// </summary>
-    // /// <param name="condition">Expression for the condition.</param>
-    // /// <param name="original">Original code</param>
-    // /// <param name="mutated">Mutated code</param>
-    // /// <returns>A new expression containing the expected construct.</returns>
     public BlockSyntax PlaceWithMemoizationStatement(
         // ExpressionSyntax condition,
-        TypeSyntax returnType,
         BlockSyntax original,
-        LiteralExpressionSyntax identifierForMemoization)
+        LiteralExpressionSyntax identifierForMemoization,
+        TypeSyntax returnType
+        )
     {
         var memVariableName = CodeInjection.GetRandomVariableName();
 
-        var memoVarDeclaration = LocalDeclarationStatement(
-            VariableDeclaration(
-                    IdentifierName("var").WithTrailingTrivia(Space))
-                .WithVariables(
-                    SingletonSeparatedList(
-                        VariableDeclarator(Identifier(memVariableName))
-                            .WithInitializer(
-                                EqualsValueClause(
-                                    InvocationExpression(IdentifierName("GetMemoization"))
-                                        .WithArgumentList(
-                                            ArgumentList(
-                                                SingletonSeparatedList(Argument(identifierForMemoization)))))))));
         var declaration = LocalDeclarationStatement(
             VariableDeclaration(GenericName(Identifier("Func"))
                     .WithTypeArgumentList(
@@ -70,16 +48,32 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
                         )
                     )
                 )
-        );
+        ).WithLeadingTrivia(CarriageReturnLineFeed).WithTrailingTrivia(CarriageReturnLineFeed);
+
+        var memoVarDeclaration = LocalDeclarationStatement(
+            VariableDeclaration(
+                    IdentifierName("var").WithTrailingTrivia(Space))
+                .WithVariables(
+                    SingletonSeparatedList(
+                        VariableDeclarator(Identifier(memVariableName))
+                            .WithInitializer(
+                                EqualsValueClause(
+                                    InvocationExpression(IdentifierName("GetMemoization"))
+                                        .WithArgumentList(
+                                            ArgumentList(
+                                                SingletonSeparatedList(Argument(identifierForMemoization))))))))
+            )
+            .WithTrailingTrivia(CarriageReturnLineFeed);
+
         // Create the if statement for memoization check
         var memoIfStatement = IfStatement(
             BinaryExpression(SyntaxKind.NotEqualsExpression, IdentifierName(memVariableName),
                 LiteralExpression(SyntaxKind.NullLiteralExpression)),
             Block(
                 SingletonList<StatementSyntax>(
-                    ReturnStatement(IdentifierName(memVariableName)).WithTrailingTrivia(Space))
-            ),
-            ElseClause(original)
+                    ReturnStatement(IdentifierName(memVariableName).WithLeadingTrivia(Space)))
+            ).WithLeadingTrivia(CarriageReturnLineFeed).WithTrailingTrivia(CarriageReturnLineFeed),
+            ElseClause(original).WithLeadingTrivia(CarriageReturnLineFeed).WithTrailingTrivia(CarriageReturnLineFeed)
         );
         return Block(
             declaration,
@@ -87,36 +81,6 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
             memoIfStatement
         );
     }
-    //
-    // Block(
-    //     LocalDeclarationStatement()
-    //         IfStatement(
-    //         )
-    // );
-    //
-    // IfStatement(condition,
-    //     AsBlock(mutatedNode),
-    // SyntaxFactory.ElseClause(AsBlock(originalNode.WithoutTrivia())))
-    // .WithTriviaFrom(originalNode).WithAdditionalAnnotations(Marker);
-    //
-    // SyntaxFactory.ParenthesizedExpression(
-    // SyntaxFactory.ConditionalExpression(
-    // condition: condition,
-    // whenTrue: mutated,
-    // whenFalse: original)).
-    //
-    // WithTriviaFrom(original).
 
-    // // Mark this node as a MutationConditional node. Store the MutantId in the annotation to retrace the mutant later
-    // WithAdditionalAnnotations(Marker);
-
-    // protected override SyntaxNode Revert(ParenthesizedExpressionSyntax parenthesized)
-    // {
-    //     if (parenthesized.Expression is ConditionalExpressionSyntax conditional)
-    //     {
-    //         return conditional.WhenFalse.WithTriviaFrom(parenthesized);
-    //     }
-    //     throw new InvalidOperationException($"Expected a block containing a conditional expression, found:\n{parenthesized.ToFullString()}.");
-    // }
     protected override SyntaxNode Revert(BlockSyntax node) => throw new NotImplementedException();
 }

@@ -3,14 +3,10 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static  Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
-namespace Stryker.Core.Helpers;
+namespace Stryker.Core.Memoization;
 
 public static class MemoizationInjectionHelper
 {
-    // public F() {
-    //     if (Check)
-    // }
-
     public static StatementSyntax CheckAndRetrieve(StatementSyntax original) =>
         IfStatement(
             BinaryExpression(

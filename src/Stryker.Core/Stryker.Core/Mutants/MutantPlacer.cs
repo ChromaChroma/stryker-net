@@ -136,66 +136,11 @@ public class MutantPlacer
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationIdMarker, mutationInfo.mutant.Id.ToString()))
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationTypeMarker, mutationInfo.mutant.Mutation.Type.ToString())));
 
-    // public MethodDeclarationSyntax InjectMemoizationMutation(MethodDeclarationSyntax original,
-    //     Mutation mutant
-    //     // MethodDeclarationSyntax mutation
-    //     )
-    // {
-    //     original.AddBodyStatements()
-    //     mutant.ReplacementNode;
-    //     // return mutation;
-    // }
 
+    public static BlockSyntax PlaceMemoizationControlledMutations(BlockSyntax original,
+        LiteralExpressionSyntax memoizationMethodIdentifier, TypeSyntax returnType) =>
+        MemoizationInstrumentationEngine.PlaceWithMemoizationStatement(original, memoizationMethodIdentifier, returnType);
 
-    /// <summary>
-    /// Add one or more mutations controlled via one or more ternary operators
-    /// </summary>
-    /// <param name="original">original expression (will be used to generate mutations)</param>
-    /// <param name="mutants">list of mutations to inject</param>
-    /// <param name="mutant"></param>
-    /// <returns>a ternary expression (or a chain of ternary expression) containing the mutant(s) and the original node.</returns>
-    public MethodDeclarationSyntax PlaceMemoizationControlledMutations(
-            MethodDeclarationSyntax original,
-            Mutant mutant
-            // ,IEnumerable<(Mutant mutant, ExpressionSyntax mutation)> mutants
-            )
-    {
-            Func<string, object> f = (string s) => null;
-            var logger = ApplicationLogging.LoggerFactory.CreateLogger<MutantPlacer>();
-
-
-            var returnType = original.ReturnType;
-            if (returnType.IsVoid())
-            {
-                logger.LogInformation($"MutantPlacer:: Return type is void and cannot be memoized (aside from sideeffectfull code).");
-                return original;
-            }
-
-            var n = mutant.Mutation.ReplacementNode;
-            if (n is not LiteralExpressionSyntax syntax || !syntax.Token.IsKind(SyntaxKind.StringLiteralToken))
-            {
-                logger.LogInformation($"MutantPlacer:: {n}");
-                return original;
-            }
-            var originalBody = original.Body ?? GenerateBlockBody(original.ExpressionBody?.Expression, original.ReturnType);
-
-
-
-            var b = MemoizationInstrumentationEngine.PlaceWithMemoizationStatement(returnType, originalBody, syntax)
-                .WithAdditionalAnnotations(new SyntaxAnnotation(MutationIdMarker, mutant.Id.ToString()))
-                .WithAdditionalAnnotations(new SyntaxAnnotation(MutationTypeMarker, mutant.Mutation.Type.ToString()));
-            return original.WithBody(b);
-        }
-
-        private static BlockSyntax GenerateBlockBody(ExpressionSyntax expressionBody, TypeSyntax returnType)
-        {
-            StatementSyntax statementLine = returnType.IsVoid()
-                ? SyntaxFactory.ExpressionStatement(expressionBody)
-                : SyntaxFactory.ReturnStatement(expressionBody.WithLeadingTrivia(SyntaxFactory.Space));
-
-            var result = SyntaxFactory.Block(statementLine);
-            return result;
-        }
 
     /// <summary>
     /// Removes the mutant (or injected code) from the syntax node

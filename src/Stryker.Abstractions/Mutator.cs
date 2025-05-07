@@ -42,7 +42,4 @@ public enum Mutator
     Conditional,
     [MutatorDescription("Collection expressions")]
     CollectionExpression,
-
-    [MutatorDescription("Memoization")]
-    Memoization
 }

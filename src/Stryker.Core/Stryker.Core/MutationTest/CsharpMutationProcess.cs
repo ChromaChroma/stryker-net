@@ -60,12 +60,20 @@ public class CsharpMutationProcess : IMutationProcess
         var compilingProcess = new CsharpCompilingProcess(input, options: _options);
         var semanticModels = compilingProcess.GetSemanticModels(projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().Select(x => x.SyntaxTree));
 
+        //TODO remove when done with POC
+        var logger = ApplicationLogging.LoggerFactory.CreateLogger<CsharpMutationProcess>();
+
         // Mutate source files
         foreach (var file in projectInfo.GetAllFiles().Cast<CsharpFileLeaf>())
         {
             _logger.LogDebug("Mutating {FilePath}", file.FullPath);
             // Mutate the syntax tree
             var mutatedSyntaxTree = orchestrator.Mutate(file.SyntaxTree, semanticModels.First(x => x.SyntaxTree == file.SyntaxTree));
+
+            //TODO remove when done with POC
+            _logger.LogInformation("Mutated {FullPath}:{NewLine}{MutatedSyntaxTree}",
+                file.FullPath, Environment.NewLine, mutatedSyntaxTree.GetText());
+
             // Add the mutated syntax tree for compilation
             file.MutatedSyntaxTree = mutatedSyntaxTree;
             if (_options.DevMode)

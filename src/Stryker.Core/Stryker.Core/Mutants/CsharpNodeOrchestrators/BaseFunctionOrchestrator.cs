@@ -2,8 +2,10 @@ using System;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.Extensions.Logging;
 using Stryker.Core.Helpers;
 using Stryker.Core.Instrumentation;
+using Stryker.Utilities.Logging;
 
 namespace Stryker.Core.Mutants.CsharpNodeOrchestrators;
 
@@ -125,6 +127,26 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             var originalBody = blockBody;
             // inject default initializers (if any)
             blockBody = MutantPlacer.InjectOutParametersInitialization(blockBody, parameters);
+
+            if (!returnType.IsVoid())
+            {
+
+                //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
+                var memoizationIdentifier = SyntaxFactory.LiteralExpression(
+                    SyntaxKind.StringLiteralExpression,
+                    SyntaxFactory.Literal("1234abcd")
+                ); // TODO method declaration part of identifier
+
+
+                blockBody = MutantPlacer.PlaceMemoizationControlledMutations(
+                    blockBody,
+                    memoizationIdentifier,
+                    returnType
+                    // , parameters
+                );
+                // ApplicationLogging.LoggerFactory.CreateLogger<BaseFunctionOrchestrator<T>>().LogInformation($"TTT2:: {blockBody}");
+            }
+
             if (!wasInExpressionForm)
             {
                 // add ending return (to mitigate compilation error due to control flow change)
@@ -138,6 +160,25 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         targetNode = ConvertToBlockBody(targetNode, returnType);
 
         var newBody = MutantPlacer.InjectOutParametersInitialization(context.InjectMutations(GetBodies(targetNode).block, GetBodies(sourceNode).expression, !returnType.IsVoid()), parameters);
+
+        if (!returnType.IsVoid())
+        {
+
+            //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
+            var memoizationIdentifier = SyntaxFactory.LiteralExpression(
+                SyntaxKind.StringLiteralExpression,
+                SyntaxFactory.Literal("1234abcd")
+            ); // TODO method declaration part of identifier
+
+
+            newBody = MutantPlacer.PlaceMemoizationControlledMutations(
+                newBody,
+                memoizationIdentifier,
+                returnType
+                // , parameters
+            );
+        }
+
         targetNode = SwitchToThisBodies(targetNode, newBody, null);
         return targetNode;
     }
