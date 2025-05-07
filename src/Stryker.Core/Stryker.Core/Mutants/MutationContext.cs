@@ -175,17 +175,6 @@ internal class MutationContext
     public StatementSyntax InjectMutations(StatementSyntax mutatedNode, StatementSyntax sourceNode)
         => _mutation.Inject(mutatedNode, sourceNode);
 
-
-    // /// <summary>
-    // /// Injects pending statement level mutations.
-    // /// </summary>
-    // /// <param name="mutatedNode">Target node that will contain the mutations</param>
-    // /// <param name="sourceNode">Source node, used to generate mutations</param>
-    // /// <returns>A mutated node containing the mutations.</returns>
-    public MethodDeclarationSyntax InjectMemoizationMutation(MethodDeclarationSyntax mutatedNode, MethodDeclarationSyntax sourceNode)
-        => _mutation.InjectMemoizationMutation(mutatedNode, sourceNode);
-
-
     /// <summary>
     /// Injects pending block level mutations.
     /// </summary>

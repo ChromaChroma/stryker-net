@@ -219,33 +219,6 @@ internal class MutationStore
         return result as BlockSyntax ?? SyntaxFactory.Block(result);
     }
 
-    // /// <summary>
-    // /// Inject (current level) mutations in the provided block (controlled with if statement)
-    // /// </summary>
-    // /// <param name="mutatedNode">mutated block</param>
-    // /// <param name="sourceNode">original node</param>
-    // /// <returns>a block with the mutations included.</returns>
-    public MethodDeclarationSyntax InjectMemoizationMutation(MethodDeclarationSyntax mutatedNode, MethodDeclarationSyntax sourceNode)
-    {
-        var store = _pendingMutations.Peek().Store;
-        var memoizationMutation = store.FirstOrDefault(m => m.Mutation.Type == Mutator.Memoization);
-        if (memoizationMutation == null)
-        {
-            return mutatedNode;
-        }
-        var result = _mutantPlacer.PlaceMemoizationControlledMutations(
-            mutatedNode,
-            memoizationMutation
-        );
-
-         store.Clear();
-
-        var logger = ApplicationLogging.LoggerFactory.CreateLogger<MutationStore>();
-        logger.LogInformation($"MutationStore::MemoizedMethod::\n {result.ToString()}");
-
-        return result; // as MethodDeclarationSyntax ?? SyntaxFactory.Block(result);
-    }
-
     /// <summary>
     /// Inject mutations within the provided expression body and return them as a block syntax.
     /// </summary>

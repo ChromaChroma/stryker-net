@@ -144,7 +144,6 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                     returnType
                     // , parameters
                 );
-                // ApplicationLogging.LoggerFactory.CreateLogger<BaseFunctionOrchestrator<T>>().LogInformation($"TTT2:: {blockBody}");
             }
 
             if (!wasInExpressionForm)

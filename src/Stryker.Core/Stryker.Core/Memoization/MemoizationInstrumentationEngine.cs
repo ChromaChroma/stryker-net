@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -11,14 +12,44 @@ namespace Stryker.Core.Memoization;
 
 internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
 {
-    public BlockSyntax PlaceWithMemoizationStatement(
-        // ExpressionSyntax condition,
-        BlockSyntax original,
-        LiteralExpressionSyntax identifierForMemoization,
+    public BlockSyntax InjectMemoizationCheck(
+        BlockSyntax block,
+        LiteralExpressionSyntax memoizationIdentifier,
         TypeSyntax returnType
         )
     {
+
         var memVariableName = CodeInjection.GetRandomVariableName();
+
+        var storeDeclaration = LocalDeclarationStatement(
+            VariableDeclaration(GenericName(Identifier("Func"))
+                    .WithTypeArgumentList(
+                        TypeArgumentList(
+                            SeparatedList<TypeSyntax>(new SyntaxNodeOrToken[]
+                            {
+                                returnType,
+                                Token(SyntaxKind.CommaToken),
+                                returnType
+                            })
+                        )
+                    ))
+                .WithTrailingTrivia(Space)
+                .WithVariables(SingletonSeparatedList(VariableDeclarator(Identifier("StoreMemoization"))
+                        .WithInitializer(EqualsValueClause(
+                                ParenthesizedLambdaExpression()
+                                    .WithParameterList(
+                                        ParameterList(SingletonSeparatedList(
+                                            Parameter(Identifier("s"))
+                                                .WithLeadingTrivia(Space)
+                                                .WithType(returnType)
+                                        ))
+                                    )
+                                    .WithExpressionBody(IdentifierName("s"))
+                            )
+                        )
+                    )
+                )
+        ).WithTrailingTrivia(CarriageReturnLineFeed);
 
         var declaration = LocalDeclarationStatement(
             VariableDeclaration(GenericName(Identifier("Func"))
@@ -48,7 +79,7 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
                         )
                     )
                 )
-        ).WithLeadingTrivia(CarriageReturnLineFeed).WithTrailingTrivia(CarriageReturnLineFeed);
+        ).WithTrailingTrivia(CarriageReturnLineFeed);
 
         var memoVarDeclaration = LocalDeclarationStatement(
             VariableDeclaration(
@@ -61,7 +92,7 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
                                     InvocationExpression(IdentifierName("GetMemoization"))
                                         .WithArgumentList(
                                             ArgumentList(
-                                                SingletonSeparatedList(Argument(identifierForMemoization))))))))
+                                                SingletonSeparatedList(Argument(memoizationIdentifier))))))))
             )
             .WithTrailingTrivia(CarriageReturnLineFeed);
 
@@ -73,14 +104,49 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
                 SingletonList<StatementSyntax>(
                     ReturnStatement(IdentifierName(memVariableName).WithLeadingTrivia(Space)))
             ).WithLeadingTrivia(CarriageReturnLineFeed).WithTrailingTrivia(CarriageReturnLineFeed),
-            ElseClause(original).WithLeadingTrivia(CarriageReturnLineFeed).WithTrailingTrivia(CarriageReturnLineFeed)
+            ElseClause(block).WithLeadingTrivia(CarriageReturnLineFeed).WithTrailingTrivia(CarriageReturnLineFeed)
         );
         return Block(
             declaration,
+            storeDeclaration,
             memoVarDeclaration,
             memoIfStatement
         );
     }
+
+    private BlockSyntax InjectReturnMemoization(
+        BlockSyntax block,
+        LiteralExpressionSyntax memoizationIdentifier,
+        TypeSyntax returnType
+        )
+    {
+
+        var returnStatements = block.Statements.Where(s => s is ReturnStatementSyntax);
+        foreach (var rs in returnStatements)
+        {
+            var newReturnStatement = ReturnStatement(
+                InvocationExpression(IdentifierName("StoreMemoization"))
+                    .WithArgumentList(
+                        ArgumentList(
+                            SingletonSeparatedList(Argument(memoizationIdentifier))
+                        )
+                    )
+            ).WithLeadingTrivia(Space);
+
+            block = block.ReplaceNode(rs, newReturnStatement);
+        }
+        return block;
+    }
+
+    public BlockSyntax PlaceWithMemoizationStatement(
+        BlockSyntax block,
+        LiteralExpressionSyntax identifierForMemoization,
+        TypeSyntax returnType)
+    {
+        block = InjectReturnMemoization(block, identifierForMemoization, returnType);
+        return InjectMemoizationCheck(block, identifierForMemoization, returnType);
+    }
+
 
     protected override SyntaxNode Revert(BlockSyntax node) => throw new NotImplementedException();
 }

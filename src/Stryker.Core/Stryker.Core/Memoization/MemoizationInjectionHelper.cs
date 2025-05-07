@@ -63,19 +63,19 @@ public static class MemoizationInjectionHelper
             )
         );
 
-    public static ExpressionSyntax ConsoleWriteTest() => SyntaxFactory.InvocationExpression(
-        SyntaxFactory.MemberAccessExpression(
+    public static ExpressionSyntax ConsoleWriteTest() => InvocationExpression(
+        MemberAccessExpression(
             SyntaxKind.SimpleMemberAccessExpression,
-            SyntaxFactory.IdentifierName("Console"),
-            SyntaxFactory.IdentifierName("WriteLine")
+            IdentifierName("Console"),
+            IdentifierName("WriteLine")
         )
     ).WithArgumentList(
-        SyntaxFactory.ArgumentList(
-            SyntaxFactory.SingletonSeparatedList(
-                SyntaxFactory.Argument(
-                    SyntaxFactory.LiteralExpression(
+        ArgumentList(
+            SingletonSeparatedList(
+                Argument(
+                    LiteralExpression(
                         SyntaxKind.StringLiteralExpression,
-                        SyntaxFactory.Literal("Hello World")
+                        Literal("Hello World")
                     )
                 )
             )
