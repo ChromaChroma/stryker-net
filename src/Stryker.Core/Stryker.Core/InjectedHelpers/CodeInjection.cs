@@ -11,12 +11,17 @@ namespace Stryker.Core.InjectedHelpers;
 public class CodeInjection
 {
     // files to be injected into the mutated assembly
-    private static readonly string[] Files = {"Stryker.Core.InjectedHelpers.MutantControl.cs",
-        "Stryker.Core.InjectedHelpers.Coverage.MutantContext.cs"};
+    private static readonly string[] Files = {
+        "Stryker.Core.InjectedHelpers.MutantControl.cs",
+        "Stryker.Core.InjectedHelpers.Coverage.MutantContext.cs",
+        "Stryker.Core.InjectedHelpers.MemoizationControl.cs",
+    };
     private const string PatternForCheck = "\\/\\/ *check with: *([^\\r\\n]+)";
     private const string MutantContextClassName = "MutantContext";
     private const string StrykerNamespace = "Stryker";
     private static readonly string Selector;
+    private static readonly string MemoizationRetrieveSelector;
+    private static readonly string MemoizationStoreSelector;
 
     static CodeInjection() //NOSONAR : no way to get read of static constructors
     {
@@ -29,12 +34,24 @@ public class CodeInjection
         }
 
         Selector = result.Groups[1].Value;
+
+        helper = GetSourceFromResource("Stryker.Core.InjectedHelpers.MemoizationControl.cs");
+        var results = extractor.Matches(helper);
+        if (results.Count < 2)
+        {
+            throw new InvalidDataException("Internal error: failed to find expression for memoization retrieval and storing.");
+        }
+        MemoizationRetrieveSelector = results[0].Groups[1].Value;
+        MemoizationStoreSelector = results[1].Groups[1].Value;
+
     }
 
     public CodeInjection()
     {
         HelperNamespace = GetRandomNamespace();
         SelectorExpression = Selector.Replace(StrykerNamespace, HelperNamespace);
+        MemoizationRetrieveSelectorExpression = MemoizationRetrieveSelector.Replace(StrykerNamespace, HelperNamespace);
+        MemoizationStoreSelectorExpression = MemoizationStoreSelector.Replace(StrykerNamespace, HelperNamespace);
 
         foreach (var file in Files)
         {
@@ -44,7 +61,8 @@ public class CodeInjection
     }
 
     public string SelectorExpression { get; }
-
+    public string MemoizationRetrieveSelectorExpression { get; }
+    public string MemoizationStoreSelectorExpression { get; }
     public string HelperNamespace { get; }
 
     private static string GetRandomNamespace()

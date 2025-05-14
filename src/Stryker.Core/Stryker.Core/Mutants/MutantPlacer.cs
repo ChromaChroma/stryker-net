@@ -136,10 +136,21 @@ public class MutantPlacer
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationIdMarker, mutationInfo.mutant.Id.ToString()))
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationTypeMarker, mutationInfo.mutant.Mutation.Type.ToString())));
 
-
-    public static BlockSyntax PlaceMemoizationControlledMutations(BlockSyntax original,
+    /// <summary>
+    /// Injects code for storing and retrieving memoized values to a method body block
+    /// </summary>
+    /// <param name="original">original body of method</param>
+    /// <param name="memoizationMethodIdentifier">identifier for memoization based on method and arguments</param>
+    /// <param name="returnType">return type of the method to be memoized</param>
+    /// <returns>a version of the block with injected memoization storing and retrieval code.</returns>
+    public BlockSyntax PlaceMemoizationControlledMutations(BlockSyntax original,
         LiteralExpressionSyntax memoizationMethodIdentifier, TypeSyntax returnType) =>
-        MemoizationInstrumentationEngine.PlaceWithMemoizationStatement(original, memoizationMethodIdentifier, returnType);
+        MemoizationInstrumentationEngine.PlaceWithMemoizationStatement(
+            original,
+            memoizationMethodIdentifier,
+            returnType,
+            _injection
+        );
 
 
     /// <summary>
@@ -226,7 +237,8 @@ public class MutantPlacer
         if (_binaryExpression == null)
         {
             _binaryExpression = SyntaxFactory.ParseExpression(_injection.SelectorExpression);
-            _placeHolderNode = _binaryExpression.DescendantNodes().First(n => n is IdentifierNameSyntax { Identifier.Text: "ID" });
+            _placeHolderNode = _binaryExpression.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "ID" });
         }
 
         return _binaryExpression.ReplaceNode(_placeHolderNode,

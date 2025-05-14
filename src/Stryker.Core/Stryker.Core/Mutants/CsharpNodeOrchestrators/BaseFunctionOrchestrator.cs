@@ -138,7 +138,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 ); // TODO method declaration part of identifier
 
 
-                blockBody = MutantPlacer.PlaceMemoizationControlledMutations(
+                blockBody = context.Placer.PlaceMemoizationControlledMutations(
                     blockBody,
                     memoizationIdentifier,
                     returnType
@@ -170,7 +170,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             ); // TODO method declaration part of identifier
 
 
-            newBody = MutantPlacer.PlaceMemoizationControlledMutations(
+            newBody = context.Placer.PlaceMemoizationControlledMutations(
                 newBody,
                 memoizationIdentifier,
                 returnType

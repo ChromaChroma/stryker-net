@@ -21,6 +21,8 @@ internal class MutationContext
     // pending mutation stacks. An entry is pushed in the stack when entering a member or function and popping it when leaving
     private readonly MutationStore _mutation;
 
+    public readonly MutantPlacer Placer;
+
     /// <summary>
     /// Mutation context must be created once when starting a mutation process.
     /// </summary>
@@ -28,11 +30,13 @@ internal class MutationContext
     public MutationContext(CsharpMutantOrchestrator mutantOrchestrator)
     {
         _mainOrchestrator = mutantOrchestrator;
+        Placer = mutantOrchestrator.Placer;
         _mutation = new MutationStore(mutantOrchestrator.Placer);
     }
 
     private MutationContext(MutationContext parent)
     {
+        Placer = parent.Placer;
         _mainOrchestrator = parent._mainOrchestrator;
         InStaticValue = parent.InStaticValue;
         _mutation = parent._mutation;
