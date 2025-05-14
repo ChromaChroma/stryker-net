@@ -11,6 +11,7 @@ namespace Stryker.Core.Mutants.CsharpNodeOrchestrators;
 /// <typeparam name="T">Type of the syntax node, must be derived from <see cref="BaseMethodDeclarationSyntax"/>.</typeparam>
 internal class BaseMethodDeclarationOrchestrator<T> : BaseFunctionOrchestrator<T> where T : BaseMethodDeclarationSyntax
 {
+
     protected override (BlockSyntax block, ExpressionSyntax expression) GetBodies(T node) => (node.Body, node.ExpressionBody?.Expression);
 
     protected override ParameterListSyntax ParameterList(T node) => node.ParameterList;
@@ -35,4 +36,7 @@ internal class BaseMethodDeclarationOrchestrator<T> : BaseFunctionOrchestrator<T
 
         return (T)node.WithBody(null).WithExpressionBody(SyntaxFactory.ArrowExpressionClause(expressionBody)).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
     }
+
+    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, LiteralExpressionSyntax memoizationIdentifier,
+        TypeSyntax returnType) => InjectMemoization(context, blockBody, memoizationIdentifier, returnType);
 }

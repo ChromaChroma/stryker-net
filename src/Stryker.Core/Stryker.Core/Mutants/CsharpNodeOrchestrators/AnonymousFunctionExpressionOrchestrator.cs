@@ -19,4 +19,7 @@ internal class AnonymousFunctionExpressionOrchestrator : BaseFunctionOrchestrato
     protected override AnonymousFunctionExpressionSyntax SwitchToThisBodies(AnonymousFunctionExpressionSyntax node, BlockSyntax blockBody,
         ExpressionSyntax expressionBody) =>
         node.WithBody(blockBody).WithExpressionBody(expressionBody);
+
+    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, LiteralExpressionSyntax memoizationIdentifier,
+        TypeSyntax returnType) => InjectMemoization(context, blockBody, memoizationIdentifier, returnType);
 }

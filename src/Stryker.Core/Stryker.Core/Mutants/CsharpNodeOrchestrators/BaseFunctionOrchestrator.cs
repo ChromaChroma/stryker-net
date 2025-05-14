@@ -15,7 +15,8 @@ namespace Stryker.Core.Mutants.CsharpNodeOrchestrators;
 /// </summary>
 /// <typeparam name="T">SyntaxNode type</typeparam>
 /// <remarks>This class is helpful because there is no (useful) shared parent class for those syntax construct</remarks>
-internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrator<T>, IInstrumentCode where T : SyntaxNode
+internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrator<T>, IInstrumentCode
+    where T : SyntaxNode
 {
     private readonly SeparatedSyntaxList<ParameterSyntax> _emptyParameterList;
 
@@ -79,6 +80,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         {
             return node;
         }
+
         var blockBody = GenerateBlockBody(expression, returnType);
         return SwitchToThisBodies(node, blockBody, null).WithAdditionalAnnotations(Marker);
     }
@@ -90,6 +92,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         {
             throw new InvalidOperationException($"Expected a {typeof(T)}, found:\n{node.ToFullString()}.");
         }
+
         var (block, _) = GetBodies(typedNode);
         var expression = block?.Statements[0] switch
         {
@@ -101,8 +104,38 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         return SwitchToThisBodies(typedNode, null, expression).WithoutAnnotations(Marker);
     }
 
+    /// <summary>
+    /// Decide whether to inject memoization or not. Inject it if so.
+    /// </summary>
+    /// <param name="context">Mutation context needed to use Placer</param>
+    /// <param name="blockBody">body to be memoized</param>
+    /// <param name="memoizationIdentifier">identifier unique to function and parameters</param>
+    /// <param name="returnType">return type of code block</param>
+    /// <returns>return possibly memoized version of <paramref name="blockBody"/></returns>
+    protected abstract BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody,
+        LiteralExpressionSyntax memoizationIdentifier, TypeSyntax returnType);
+
+    /// <summary>
+    /// Calls the placer to inject memoization in the code block. This can be called from MemoizeBlock if T needs memoization.
+    /// </summary>
+    ///
+    ///
+    ///
+    ///
+    ///
+    /// <returns>an body with memoization injected</returns>
+    protected BlockSyntax InjectMemoization(MutationContext context, BlockSyntax blockBody,
+        LiteralExpressionSyntax memoizationIdentifier, TypeSyntax returnType) =>
+        context.Placer.PlaceMemoizationControlledMutations(
+            blockBody,
+            memoizationIdentifier,
+            returnType
+            // , parameters
+        );
+
     /// <inheritdoc/>
-    protected override T InjectMutations(T sourceNode, T targetNode, SemanticModel semanticModel, MutationContext context)
+    protected override T InjectMutations(T sourceNode, T targetNode, SemanticModel semanticModel,
+        MutationContext context)
     {
         var (blockBody, expressionBody) = GetBodies(targetNode);
 
@@ -111,6 +144,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             // no implementation provided
             return targetNode;
         }
+
         var wasInExpressionForm = GetBodies(sourceNode).expression != null;
         var returnType = ReturnType(sourceNode);
         var parameters = ParameterList(sourceNode)?.Parameters ?? _emptyParameterList;
@@ -130,7 +164,6 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
             if (!returnType.IsVoid())
             {
-
                 //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
                 var memoizationIdentifier = SyntaxFactory.LiteralExpression(
                     SyntaxKind.StringLiteralExpression,
@@ -138,12 +171,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 ); // TODO method declaration part of identifier
 
 
-                blockBody = context.Placer.PlaceMemoizationControlledMutations(
-                    blockBody,
-                    memoizationIdentifier,
-                    returnType
-                    // , parameters
-                );
+                blockBody = MemoizeBlock(context, blockBody, memoizationIdentifier, returnType ); //, parameters
             }
 
             if (!wasInExpressionForm)
@@ -152,30 +180,28 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 // not needed for an expression form method as no control flow may be present
                 blockBody = MutantPlacer.AddEndingReturn(blockBody, returnType);
             }
+
             // do we need to change the body
-            return originalBody == blockBody ? targetNode : SwitchToThisBodies(targetNode, MutantPlacer.AddEndingReturn(blockBody, returnType), null);
+            return originalBody == blockBody
+                ? targetNode
+                : SwitchToThisBodies(targetNode, MutantPlacer.AddEndingReturn(blockBody, returnType), null);
         }
 
         targetNode = ConvertToBlockBody(targetNode, returnType);
 
-        var newBody = MutantPlacer.InjectOutParametersInitialization(context.InjectMutations(GetBodies(targetNode).block, GetBodies(sourceNode).expression, !returnType.IsVoid()), parameters);
+        var newBody = MutantPlacer.InjectOutParametersInitialization(
+            context.InjectMutations(GetBodies(targetNode).block, GetBodies(sourceNode).expression,
+                !returnType.IsVoid()), parameters);
 
         if (!returnType.IsVoid())
         {
-
             //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
             var memoizationIdentifier = SyntaxFactory.LiteralExpression(
                 SyntaxKind.StringLiteralExpression,
                 SyntaxFactory.Literal("1234abcd")
             ); // TODO method declaration part of identifier
 
-
-            newBody = context.Placer.PlaceMemoizationControlledMutations(
-                newBody,
-                memoizationIdentifier,
-                returnType
-                // , parameters
-            );
+            newBody = MemoizeBlock(context, newBody, memoizationIdentifier, returnType ); //, parameters
         }
 
         targetNode = SwitchToThisBodies(targetNode, newBody, null);

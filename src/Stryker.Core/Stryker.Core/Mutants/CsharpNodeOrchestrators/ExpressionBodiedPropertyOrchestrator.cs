@@ -30,6 +30,9 @@ internal class ExpressionBodiedPropertyOrchestrator : BaseFunctionOrchestrator<P
             WithSemicolonToken(SyntaxFactory.MissingToken(SyntaxKind.SemicolonToken));
     }
 
+    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody,
+        LiteralExpressionSyntax memoizationIdentifier, TypeSyntax returnType) => blockBody;
+
     protected override PropertyDeclarationSyntax OrchestrateChildrenMutation(PropertyDeclarationSyntax node, SemanticModel semanticModel, MutationContext context)
     {
         if (node.Initializer == null)
