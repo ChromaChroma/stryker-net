@@ -22,6 +22,7 @@ public class CodeInjection
     private static readonly string Selector;
     private static readonly string MemoizationRetrieveSelector;
     private static readonly string MemoizationStoreSelector;
+    private static readonly string MemoizationGenerateIdSelector;
 
     static CodeInjection() //NOSONAR : no way to get read of static constructors
     {
@@ -37,12 +38,13 @@ public class CodeInjection
 
         helper = GetSourceFromResource("Stryker.Core.InjectedHelpers.MemoizationControl.cs");
         var results = extractor.Matches(helper);
-        if (results.Count < 2)
+        if (results.Count < 3)
         {
             throw new InvalidDataException("Internal error: failed to find expression for memoization retrieval and storing.");
         }
         MemoizationRetrieveSelector = results[0].Groups[1].Value;
         MemoizationStoreSelector = results[1].Groups[1].Value;
+        MemoizationGenerateIdSelector = results[2].Groups[1].Value;
 
     }
 
@@ -52,6 +54,7 @@ public class CodeInjection
         SelectorExpression = Selector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationRetrieveSelectorExpression = MemoizationRetrieveSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationStoreSelectorExpression = MemoizationStoreSelector.Replace(StrykerNamespace, HelperNamespace);
+        MemoizationGenerateIdSelectorExpression = MemoizationGenerateIdSelector.Replace(StrykerNamespace, HelperNamespace);
 
         foreach (var file in Files)
         {
@@ -63,6 +66,7 @@ public class CodeInjection
     public string SelectorExpression { get; }
     public string MemoizationRetrieveSelectorExpression { get; }
     public string MemoizationStoreSelectorExpression { get; }
+    public string MemoizationGenerateIdSelectorExpression { get; }
     public string HelperNamespace { get; }
 
     private static string GetRandomNamespace()
@@ -79,7 +83,7 @@ public class CodeInjection
         return StrykerNamespace + new string(chars);
     }
 
-    public static string GetRandomVariableName()
+    public static string GetRandomVariableName(string prefix = "")
     {
         // Create a string of characters and numbers allowed in the namespace
         const string ValidChars = "ABCDEFGHJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -91,7 +95,7 @@ public class CodeInjection
         {
             chars[i] = ValidChars[random.Next(0, ValidChars.Length)];
         }
-        return "memoized_value__" + new string(chars);
+        return prefix + new string(chars);
     }
 
     public IDictionary<string, string> MutantHelpers { get; } = new Dictionary<string, string>();

@@ -31,7 +31,7 @@ internal class ExpressionBodiedPropertyOrchestrator : BaseFunctionOrchestrator<P
     }
 
     protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody,
-        LiteralExpressionSyntax memoizationIdentifier, TypeSyntax returnType) => blockBody;
+        string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => blockBody;
 
     protected override PropertyDeclarationSyntax OrchestrateChildrenMutation(PropertyDeclarationSyntax node, SemanticModel semanticModel, MutationContext context)
     {

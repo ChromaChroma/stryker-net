@@ -19,6 +19,6 @@ internal class AccessorSyntaxOrchestrator : BaseFunctionOrchestrator<AccessorDec
         => expressionBody == null ? node.WithBody(blockBody).WithExpressionBody(null).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.None))
         : node.WithBody(null).WithExpressionBody(SyntaxFactory.ArrowExpressionClause(expressionBody)).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
 
-    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, LiteralExpressionSyntax memoizationIdentifier,
-        TypeSyntax returnType) => blockBody;
+    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier,
+        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => blockBody;
 }

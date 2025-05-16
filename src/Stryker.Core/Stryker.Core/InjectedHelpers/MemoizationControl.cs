@@ -14,5 +14,9 @@ namespace Stryker
         {
             return value;
         }
+
+        // check with: Stryker.MemoizationControl.GenerateMemoizationId(ID, PARAMS)
+        public static string GenerateMemoizationId(string methodIdentifier, params object[] args)
+            => methodIdentifier + "__" + string.Join(":-:", args.ToString()); //TODO maybe Hash these instead of ToString()
     }
 }

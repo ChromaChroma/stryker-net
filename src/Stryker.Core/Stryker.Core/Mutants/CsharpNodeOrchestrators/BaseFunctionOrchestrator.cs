@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -109,11 +111,12 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
     /// </summary>
     /// <param name="context">Mutation context needed to use Placer</param>
     /// <param name="blockBody">body to be memoized</param>
-    /// <param name="memoizationIdentifier">identifier unique to function and parameters</param>
+    /// <param name="methodIdentifier">identifier unique to function</param>
     /// <param name="returnType">return type of code block</param>
+    /// <param name="node">node of the body and return type, used for identifier creation</param>
+    /// <param name="inputParameters">non-out parameters used for identifier</param>
     /// <returns>return possibly memoized version of <paramref name="blockBody"/></returns>
-    protected abstract BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody,
-        LiteralExpressionSyntax memoizationIdentifier, TypeSyntax returnType);
+    protected abstract BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters);
 
     /// <summary>
     /// Calls the placer to inject memoization in the code block. This can be called from MemoizeBlock if T needs memoization.
@@ -125,12 +128,12 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
     ///
     /// <returns>an body with memoization injected</returns>
     protected BlockSyntax InjectMemoization(MutationContext context, BlockSyntax blockBody,
-        LiteralExpressionSyntax memoizationIdentifier, TypeSyntax returnType) =>
+        string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) =>
         context.Placer.PlaceMemoizationControlledMutations(
             blockBody,
-            memoizationIdentifier,
-            returnType
-            // , parameters
+            methodIdentifier,
+            returnType,
+            inputParameters
         );
 
     /// <inheritdoc/>
@@ -154,6 +157,8 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         {
             if (blockBody == null)
             {
+                //  TODO we could inject memoization to expression bodies instead of block bodies also
+
                 // we can't do any other injection
                 return targetNode;
             }
@@ -162,24 +167,31 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             // inject default initializers (if any)
             blockBody = MutantPlacer.InjectOutParametersInitialization(blockBody, parameters);
 
-            if (!returnType.IsVoid())
-            {
-                //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
-                var memoizationIdentifier = SyntaxFactory.LiteralExpression(
-                    SyntaxKind.StringLiteralExpression,
-                    SyntaxFactory.Literal("1234abcd")
-                ); // TODO method declaration part of identifier
-
-
-                blockBody = MemoizeBlock(context, blockBody, memoizationIdentifier, returnType ); //, parameters
-            }
-
             if (!wasInExpressionForm)
             {
                 // add ending return (to mitigate compilation error due to control flow change)
                 // not needed for an expression form method as no control flow may be present
                 blockBody = MutantPlacer.AddEndingReturn(blockBody, returnType);
             }
+
+            // TODO this does not capture out variables!
+            if (!returnType.IsVoid())
+            {
+                //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
+
+                var name = GetFullyQualifiedName(sourceNode, semanticModel);
+                var memoizationIdentifier = SyntaxFactory.LiteralExpression(
+                    SyntaxKind.StringLiteralExpression,
+                    SyntaxFactory.Literal(name)
+                );
+                var nonOutParameters = parameters
+                    .Where(p => !p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword)))
+                    .Select(p => SyntaxFactory.IdentifierName(p.Identifier.Text))
+                    .ToArray();
+
+                blockBody = MemoizeBlock(context, blockBody, name, returnType, nonOutParameters); //, parameters
+            }
+
 
             // do we need to change the body
             return originalBody == blockBody
@@ -190,21 +202,40 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         targetNode = ConvertToBlockBody(targetNode, returnType);
 
         var newBody = MutantPlacer.InjectOutParametersInitialization(
-            context.InjectMutations(GetBodies(targetNode).block, GetBodies(sourceNode).expression,
-                !returnType.IsVoid()), parameters);
-
-        if (!returnType.IsVoid())
-        {
-            //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
-            var memoizationIdentifier = SyntaxFactory.LiteralExpression(
-                SyntaxKind.StringLiteralExpression,
-                SyntaxFactory.Literal("1234abcd")
-            ); // TODO method declaration part of identifier
-
-            newBody = MemoizeBlock(context, newBody, memoizationIdentifier, returnType ); //, parameters
-        }
+            context.InjectMutations(GetBodies(targetNode).block, GetBodies(sourceNode).expression, !returnType.IsVoid()),
+            parameters);
 
         targetNode = SwitchToThisBodies(targetNode, newBody, null);
         return targetNode;
+    }
+
+    /// <summary>
+    ///
+    /// </summary>
+    /// <param name="localFunction"></param>
+    /// <param name="semanticModel"></param>
+    /// <returns></returns>
+    private string GetFullyQualifiedName(SyntaxNode localFunction, SemanticModel semanticModel)
+    {
+        var symbol = semanticModel.GetDeclaredSymbol(localFunction);
+        if (symbol == null)
+        {
+            //todo Randomized string?
+            return string.Empty;
+        }
+
+        // Start with the local function name
+        var nameParts = new List<string> { symbol.Name };
+
+        // Traverse the containing symbols (e.g., methods, classes, namespaces)
+        var containingSymbol = symbol.ContainingSymbol;
+        while (containingSymbol != null)
+        {
+            nameParts.Insert(0, containingSymbol.Name);
+            containingSymbol = containingSymbol.ContainingSymbol;
+        }
+
+        // Join the parts with dots to form the fully qualified name
+        return string.Join("::", nameParts.Where(part => !string.IsNullOrEmpty(part)).Distinct());
     }
 }

@@ -37,6 +37,6 @@ internal class BaseMethodDeclarationOrchestrator<T> : BaseFunctionOrchestrator<T
         return (T)node.WithBody(null).WithExpressionBody(SyntaxFactory.ArrowExpressionClause(expressionBody)).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
     }
 
-    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, LiteralExpressionSyntax memoizationIdentifier,
-        TypeSyntax returnType) => InjectMemoization(context, blockBody, memoizationIdentifier, returnType);
+    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier,
+        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, blockBody, methodIdentifier, returnType, inputParameters);
 }

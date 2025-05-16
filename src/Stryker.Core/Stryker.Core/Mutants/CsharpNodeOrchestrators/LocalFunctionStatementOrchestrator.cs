@@ -25,6 +25,6 @@ internal class LocalFunctionStatementOrchestrator : BaseFunctionOrchestrator<Loc
     protected override LocalFunctionStatementSyntax SwitchToThisBodies(LocalFunctionStatementSyntax node, BlockSyntax blockBody,
         ExpressionSyntax expressionBody) => node.WithBody(blockBody).WithExpressionBody(expressionBody is null ? null : SyntaxFactory.ArrowExpressionClause(expressionBody));
 
-    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, LiteralExpressionSyntax memoizationIdentifier,
-        TypeSyntax returnType) => InjectMemoization(context, blockBody, memoizationIdentifier, returnType);
+    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier,
+        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, blockBody, methodIdentifier, returnType, inputParameters);
 }

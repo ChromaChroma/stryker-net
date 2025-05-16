@@ -140,15 +140,17 @@ public class MutantPlacer
     /// Injects code for storing and retrieving memoized values to a method body block
     /// </summary>
     /// <param name="original">original body of method</param>
-    /// <param name="memoizationMethodIdentifier">identifier for memoization based on method and arguments</param>
+    /// <param name="methodIdentifier">identifier of method used for memoization identifier</param>
     /// <param name="returnType">return type of the method to be memoized</param>
+    /// <param name="inputParameters"></param>
     /// <returns>a version of the block with injected memoization storing and retrieval code.</returns>
     public BlockSyntax PlaceMemoizationControlledMutations(BlockSyntax original,
-        LiteralExpressionSyntax memoizationMethodIdentifier, TypeSyntax returnType) =>
+        string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) =>
         MemoizationInstrumentationEngine.PlaceWithMemoizationStatement(
             original,
-            memoizationMethodIdentifier,
+            methodIdentifier,
             returnType,
+            inputParameters,
             _injection
         );
 
