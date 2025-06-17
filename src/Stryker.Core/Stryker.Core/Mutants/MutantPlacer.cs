@@ -20,7 +20,7 @@ namespace Stryker.Core.Mutants;
 /// </summary>
 public class MutantPlacer
 {
-    private const string MutationIdMarker = "MutationId";
+    public const string MutationIdMarker = "MutationId";
     private const string MutationTypeMarker = "MutationType";
     public static readonly string Injector = "Injector";
 

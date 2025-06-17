@@ -20,6 +20,7 @@ public class CodeInjection
     private const string MutantContextClassName = "MutantContext";
     private const string StrykerNamespace = "Stryker";
     private static readonly string Selector;
+    private static readonly string AnyActiveSelector;
     private static readonly string MemoizationRetrieveSelector;
     private static readonly string MemoizationStoreSelector;
     private static readonly string MemoizationGenerateIdSelector;
@@ -28,23 +29,24 @@ public class CodeInjection
     {
         var helper = GetSourceFromResource("Stryker.Core.InjectedHelpers.MutantControl.cs");
         var extractor = new Regex(PatternForCheck);
-        var result = extractor.Match(helper);
-        if (!result.Success)
+        var results = extractor.Matches(helper);
+        if (results.Count < 2)
         {
             throw new InvalidDataException("Internal error: failed to find expression for mutant selection.");
         }
 
-        Selector = result.Groups[1].Value;
+        Selector = MemoizationRetrieveSelector = results[0].Groups[1].Value;
+        AnyActiveSelector = MemoizationRetrieveSelector = results[1].Groups[1].Value;
 
         helper = GetSourceFromResource("Stryker.Core.InjectedHelpers.MemoizationControl.cs");
-        var results = extractor.Matches(helper);
-        if (results.Count < 3)
+        var results2 = extractor.Matches(helper);
+        if (results2.Count < 3)
         {
             throw new InvalidDataException("Internal error: failed to find expression for memoization retrieval and storing.");
         }
-        MemoizationRetrieveSelector = results[0].Groups[1].Value;
-        MemoizationStoreSelector = results[1].Groups[1].Value;
-        MemoizationGenerateIdSelector = results[2].Groups[1].Value;
+        MemoizationRetrieveSelector = results2[0].Groups[1].Value;
+        MemoizationStoreSelector = results2[1].Groups[1].Value;
+        MemoizationGenerateIdSelector = results2[2].Groups[1].Value;
 
     }
 
@@ -52,6 +54,7 @@ public class CodeInjection
     {
         HelperNamespace = GetRandomNamespace();
         SelectorExpression = Selector.Replace(StrykerNamespace, HelperNamespace);
+        AnyActiveSelectorExpression = AnyActiveSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationRetrieveSelectorExpression = MemoizationRetrieveSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationStoreSelectorExpression = MemoizationStoreSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationGenerateIdSelectorExpression = MemoizationGenerateIdSelector.Replace(StrykerNamespace, HelperNamespace);
@@ -64,6 +67,7 @@ public class CodeInjection
     }
 
     public string SelectorExpression { get; }
+    public string AnyActiveSelectorExpression { get; }
     public string MemoizationRetrieveSelectorExpression { get; }
     public string MemoizationStoreSelectorExpression { get; }
     public string MemoizationGenerateIdSelectorExpression { get; }

@@ -85,5 +85,37 @@ namespace Stryker
                 }
             }
         }
+
+
+
+        // check with: Stryker.MutantControl.AnyActive(IDS)
+        public static bool AnyActive(IEnumerable<string> ids)
+        {
+            if (ActiveMutant == ActiveMutantNotInitValue)
+            {
+#pragma warning disable CS8600
+                // get the environment variable storing the mutation id
+                string environmentVariableName = System.Environment.GetEnvironmentVariable("STRYKER_MUTANT_ID_CONTROL_VAR");
+
+                if (environmentVariableName != null)
+                {
+                    string environmentVariable = System.Environment.GetEnvironmentVariable(environmentVariableName);
+                    if (string.IsNullOrEmpty(environmentVariable))
+                    {
+                        ActiveMutant = -1;
+                    }
+                    else
+                    {
+                        ActiveMutant = int.Parse(environmentVariable);
+                    }
+                }
+                else
+                {
+                    ActiveMutant = -1;
+                }
+            }
+
+            return ids.Any(id => id == ActiveMutant.ToString());
+        }
     }
 }

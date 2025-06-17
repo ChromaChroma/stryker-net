@@ -1,23 +1,35 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Stryker.Core.InjectedHelpers;
 using Stryker.Core.Instrumentation;
+using Stryker.Core.Mutants;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace Stryker.Core.Memoization;
 
 internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
 {
+    // Code expression for active mutant id check
+    private ExpressionSyntax _activeIdsExpression;
+
+    private SyntaxNode _activeIdsIdPlaceHolderNode;
+
     // Code expression for memoization value retrieval
     private ExpressionSyntax _retrieveExpression;
+
     private SyntaxNode _retrieveMemoizationPlaceHolderNode;
+
     // Code expression for memoization value storage
     private ExpressionSyntax _storeExpression;
     private SyntaxNode _storeMemoizationIdPlaceHolderNode;
+
     private SyntaxNode _storeMemoizationValuePlaceHolderNode;
+
     // Code expression for generation of memoization id to store and retrieve memoization values
     private ExpressionSyntax _generateIdExpression;
     private SyntaxNode _generateIdMethodIdentifierPlaceHolderNode;
@@ -26,6 +38,12 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
 
     protected override SyntaxNode Revert(BlockSyntax node) => throw new NotImplementedException();
 
+    private IEnumerable<string> GetMutantIdsInBlock(BlockSyntax block) =>
+        block.DescendantNodes()
+            .SelectMany(n => n.GetAnnotations(MutantPlacer.MutationIdMarker))
+            .Select(ann => ann.Data)
+            .Distinct();
+
     public BlockSyntax PlaceWithMemoizationStatement(BlockSyntax block, string methodIdentifier, TypeSyntax returnType,
         IdentifierNameSyntax[] inputParameters, CodeInjection injection)
     {
@@ -33,13 +51,50 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
             SyntaxKind.StringLiteralExpression,
             Literal(CodeInjection.GetRandomVariableName("memoization_id__"))
         );
-        block = InjectMemoizationIdentityDeclaration(block, memoizationIdentifier, methodIdentifier, inputParameters, injection);
+        block = InjectMemoizationIdentityDeclaration(block, memoizationIdentifier, methodIdentifier, inputParameters,
+            injection);
         block = InjectReturnMemoization(block, memoizationIdentifier, returnType, injection);
         return InjectMemoizationCheck(block, memoizationIdentifier, returnType, injection);
     }
 
+    private ExpressionSyntax AnyActiveMutantsCheck(IEnumerable<string> ids, CodeInjection injection)
+    {
+        if (_activeIdsExpression == null)
+        {
+            _activeIdsExpression = ParseExpression(injection.AnyActiveSelectorExpression);
+            _activeIdsIdPlaceHolderNode = _activeIdsExpression.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "IDS" });
+        }
+
+        var arrayExpression = ArrayCreationExpression(
+            ArrayType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithLeadingTrivia(Space))
+                .WithRankSpecifiers(
+                    SingletonList(
+                        ArrayRankSpecifier(SingletonSeparatedList<ExpressionSyntax>(OmittedArraySizeExpression()))))
+        ).WithInitializer(
+            InitializerExpression(SyntaxKind.ArrayInitializerExpression,
+                SeparatedList<ExpressionSyntax>(
+                    ids.Select(id => LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(id))))
+            )
+        );
+        return _activeIdsExpression.ReplaceNode(_activeIdsIdPlaceHolderNode, arrayExpression);
+
+
+        // [_generateIdMethodIdentifierPlaceHolderNode, _generateIdParamsPlaceHolderNode],
+        // (original, _) => original switch
+        // {
+        //     _ when original == _generateIdMethodIdentifierPlaceHolderNode => LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(methodIdentifier)),
+        //     _ when original == _generateIdParamsPlaceHolderNode => arrayExpression,
+        //     _ => original
+        // }
+        // );
+
+        // return arrayExpression;
+    }
+
     private BlockSyntax InjectMemoizationIdentityDeclaration(BlockSyntax block,
-        LiteralExpressionSyntax memoizationIdVariableIdentifier, string methodIdentifier, IdentifierNameSyntax[] inputParameters, CodeInjection injection)
+        LiteralExpressionSyntax memoizationIdVariableIdentifier, string methodIdentifier,
+        IdentifierNameSyntax[] inputParameters, CodeInjection injection)
     {
         // Initialize memoization id generation expression
         if (_generateIdExpression == null)
@@ -62,13 +117,15 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
             [_generateIdMethodIdentifierPlaceHolderNode, _generateIdParamsPlaceHolderNode],
             (original, _) => original switch
             {
-                _ when original == _generateIdMethodIdentifierPlaceHolderNode => LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(methodIdentifier)),
+                _ when original == _generateIdMethodIdentifierPlaceHolderNode => LiteralExpression(
+                    SyntaxKind.StringLiteralExpression, Literal(methodIdentifier)),
                 _ when original == _generateIdParamsPlaceHolderNode => arrayExpression,
                 _ => original
             }
         );
 
-        var memoizationIdentifierDeclaration = DeclareLocal(memoizationIdVariableIdentifier.Token.Text, generateIdExpr);
+        var memoizationIdentifierDeclaration =
+            DeclareMemoizedValueLocal(memoizationIdVariableIdentifier.Token.Text, generateIdExpr);
         return block.WithStatements(block.Statements.Insert(0, memoizationIdentifierDeclaration));
     }
 
@@ -152,12 +209,13 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
     }
 
 
-    private LocalDeclarationStatementSyntax DeclareLocal(string variableName, ExpressionSyntax expr) =>
+    private LocalDeclarationStatementSyntax DeclareMemoizedValueLocal(string variableName, ExpressionSyntax expr) =>
         LocalDeclarationStatement(
             VariableDeclaration(IdentifierName("var").WithTrailingTrivia(Space))
                 .WithVariables(
                     SingletonSeparatedList(
-                        VariableDeclarator(Identifier(variableName)).WithInitializer(EqualsValueClause(expr))))
+                        VariableDeclarator(Identifier(variableName))
+                            .WithInitializer(EqualsValueClause(expr))))
         ).WithTrailingTrivia(CarriageReturnLineFeed);
 
     private BlockSyntax InjectMemoizationCheck(BlockSyntax block, LiteralExpressionSyntax memoizationIdentifier,
@@ -165,7 +223,15 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
     {
         var retrieveMemoizationExpr = RetrieveMemoizationExpression(memoizationIdentifier, returnType, injection);
         var memVariableName = CodeInjection.GetRandomVariableName("memoized_value__");
-        var memoVarDeclaration = DeclareLocal(memVariableName, retrieveMemoizationExpr);
+
+        var activeMutantsExpression = AnyActiveMutantsCheck(GetMutantIdsInBlock(block), injection);
+
+        var conditionalRetrieveMemoizedValueExpr = ParenthesizedExpression(ConditionalExpression(
+            condition: activeMutantsExpression,
+            whenTrue: retrieveMemoizationExpr,
+            whenFalse: LiteralExpression(SyntaxKind.NullLiteralExpression)
+        ));
+        var memoVarDeclaration = DeclareMemoizedValueLocal(memVariableName, conditionalRetrieveMemoizedValueExpr);
 
 
         // Create the if statement for memoization check
