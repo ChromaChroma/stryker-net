@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -265,6 +266,7 @@ public sealed class VsTestRunner : IDisposable
                 activeId = mutantTestsMap.Keys.First();
             }
             Environment.SetEnvironmentVariable(ControlVariableName, activeId.ToString());
+
             RunVsTest(tests, source.GetAssemblyPath(), runSettings, options, timeOut, runEventHandler);
 
             if (_currentSessionCancelled)

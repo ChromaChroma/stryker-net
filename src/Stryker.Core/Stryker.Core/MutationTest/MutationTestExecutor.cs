@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Microsoft.Extensions.Logging;
 using Stryker.Abstractions;
@@ -36,9 +37,26 @@ public class MutationTestExecutor : IMutationTestExecutor
         TestUpdateHandler updateHandler)
     {
         var forceSingle = false;
+
+        var stopwatch = new Stopwatch();
+        stopwatch.Start();
+        var timeoutCounter = 0;
+        var mutants = $"{mutantsToTest.Count}:{string.Join(" ,", mutantsToTest.Select(x => x.Mutation.ReplacementNode.ToString()))}";
+
         while (mutantsToTest.Any())
         {
             var result = RunTestSession(project, mutantsToTest, timeoutMs, updateHandler, forceSingle);
+
+            if (result.SessionTimedOut || result.TimedOutTests.Count > 0)
+            {
+                timeoutCounter++;
+            }
+
+            Logger.LogDebug("===Mutant Testing ({Status})({Nr}) ({ElapsedMilliseconds} ms) of: {Mutants}",
+                result.SessionTimedOut || result.TimedOutTests.Count > 0 ? $"{timeoutCounter} timeouts" : "no timeout",
+                result.TimedOutTests.Count,
+                stopwatch.ElapsedMilliseconds,
+                $"{mutantsToTest.Count}:{string.Join(" ,", mutantsToTest.Select(x => x.Mutation.DisplayName.ToString() +"__" + x.Mutation.ReplacementNode))}");
 
             Logger.LogDebug(
                 "Test run for {Mutants} is {Result} ",
@@ -87,12 +105,19 @@ public class MutationTestExecutor : IMutationTestExecutor
 
             mutantsToTest = remainingMutants;
         }
+
+        stopwatch.Stop();
+        Logger.LogDebug("===Mutant Testing (END) ({ElapsedMilliseconds} ms) of: {Mutants}", stopwatch.ElapsedMilliseconds, mutants);
     }
 
     private ITestRunResult RunTestSession(IProjectAndTests projectAndTests, ICollection<IMutant> mutantsToTest,
         ITimeoutValueCalculator timeoutMs,
         TestUpdateHandler updateHandler, bool forceSingle)
     {
+        var stopwatch = new Stopwatch();
+        stopwatch.Start();
+        var checkpoint = stopwatch.ElapsedMilliseconds;
+
         Logger.LogTrace("Testing {MutantsToTest}.", string.Join(" ,", mutantsToTest.Select(x => x.DisplayName)));
         if (forceSingle)
         {
@@ -107,6 +132,10 @@ public class MutationTestExecutor : IMutationTestExecutor
                         localResult.TimedOutTests,
                         localResult.SessionTimedOut);
                 }
+                Logger.LogDebug("===Mutant Testing forceSingle ({ElapsedMilliseconds} ms) of: {Mutants}",
+                    stopwatch.ElapsedMilliseconds - checkpoint,
+                    $"{mutant.Id}:{mutant.Mutation.DisplayName}__{mutant.Mutation.ReplacementNode}");
+
             }
 
             return new TestRunResult(true);
