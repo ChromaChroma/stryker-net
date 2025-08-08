@@ -22,87 +22,85 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
 
     {
         // Variables: VariableDeclaratorSyntax { Initializer: InitializerExpressionSyntax { Value: rhsExpr }} rhsExp
-        if (sourceNode is not LocalDeclarationStatementSyntax { Declaration: VariableDeclarationSyntax vds }
-            || targetNode is not LocalDeclarationStatementSyntax { Declaration: VariableDeclarationSyntax vdsMutated })
+        if (sourceNode is not LocalDeclarationStatementSyntax { Declaration: { } vds }
+            || targetNode is not LocalDeclarationStatementSyntax { Declaration: { } vdsMutated })
         {
             return targetNode;
         }
 
-        var declaredType = vds.Type.IsVar
-            ? ParseTypeName(semanticModel.GetTypeInfo(vds.Variables.First().Initializer?.Value).Type?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat))
-            : vds.Type;
-
+        var declaredType = vds.Type;
+        if (vds.Type.IsVar)
+        {
+            var variableValue = vds.Variables.Select(v => v.Initializer?.Value).FirstOrDefault(v => v is not null);
+            if (variableValue != null)
+            {
+                declaredType = ParseTypeName(semanticModel.GetTypeInfo(variableValue).Type!.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+            }
+        }
+        // If infered type is var, we cannot perform memoization (Type needed)
         if (declaredType.IsVar || declaredType.ToString() == "")
         {
             return targetNode;
         }
 
-        // int x = 1, y = 2;
-        // int x = IsActive(112)? -1,1, y = 2;
-
         var declarators = new List<VariableDeclaratorSyntax>();
-        foreach (VariableDeclaratorSyntax vdec in vdsMutated.Variables)
+        foreach (var vdec in vdsMutated.Variables)
         {
             var originalVdec = vds.Variables
                 .FirstOrDefault(v => v.Identifier.ValueText == vdec.Identifier.ValueText);
             var rhsExprOriginal = originalVdec?.Initializer?.Value;
 
-            if (rhsExprOriginal != null)
+            if (rhsExprOriginal == null || vdec.Initializer == null)
             {
-
-                var id =
-                    $"{originalVdec.SyntaxTree.GetLineSpan(originalVdec.Span).StartLinePosition}__{semanticModel.GetEnclosingSymbol(originalVdec.SpanStart)?.ContainingNamespace}__{originalVdec.Identifier.ValueText}";
-
-
-                // Create "id" argument
-                //todo: change literal
-                var stringArg = LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(id));
-
-                // () => { return expr; }
-                var lambdaExpr = ParenthesizedLambdaExpression()
-                    .WithParameterList(ParameterList())
-                    .WithBlock(Block(ReturnStatement(rhsExprOriginal.WithLeadingTrivia(Space))));
-
-                // RetrieveMemo<T>("key::123123", () => { return expr })
-                var invocation = MutantPlacer.MemoizationInstrumentationEngine
-                    .RetrieveMemoizationExpression(stringArg, declaredType, lambdaExpr,
-                        context.Placer._injection);
-
-                var mutantIds = targetNode.GetDescendantMutantIds().ToList();
-                if (mutantIds.Count != 0 && vdec.Initializer != null)
-                {
-                    var anyActiveMutantsInvocation = MutantPlacer.MemoizationInstrumentationEngine
-                        .AnyActiveMutantsCheck(mutantIds, context.Placer._injection);
-                    var negatedNode = PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, anyActiveMutantsInvocation);
-                    var ternaryNode = ConditionalExpression(negatedNode, invocation, vdec.Initializer.Value);
-
-
-                    // Add as declarator to the list of declarators
-                    declarators.Add(
-                        VariableDeclarator(vdec.Identifier)
-                            .WithInitializer(EqualsValueClause(ternaryNode))
-                    );
-                }
-                else //If no mutants in rhs expr, continue with the memoized invocation
-                {
-
-                    // Add as declarator to the list of declarators
-                    declarators.Add(
-                        VariableDeclarator(vdec.Identifier)
-                            .WithInitializer(EqualsValueClause(invocation))
-                    );
-                }
-            }
-            else
-            {
-                // Else just use the generated mutated code
+                // If no expression preset, continue with target nodes variable declarator
                 declarators.Add(vdec);
+                continue;
             }
+
+            var id =
+                $"{originalVdec.SyntaxTree.GetLineSpan(originalVdec.Span).StartLinePosition}" +
+                $"__" +
+                $"{semanticModel.GetEnclosingSymbol(originalVdec.SpanStart)?.ContainingNamespace}" +
+                $"__" +
+                $"{originalVdec.Identifier.ValueText}";
+
+
+            // Create "memoId" argument
+            //todo: change literal to add input args
+            var stringArg = LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(id));
+
+            // () => { return expr; }
+            var lambdaExpr = ParenthesizedLambdaExpression()
+                .WithParameterList(ParameterList())
+                .WithBlock(Block(ReturnStatement(rhsExprOriginal.WithLeadingTrivia(Space))));
+
+
+            // RetrieveMemo<T>("memoId", () => { return expr })
+            var invocation = MutantPlacer.MemoizationInstrumentationEngine
+                .RetrieveMemoizationExpression(stringArg, declaredType, lambdaExpr, context.Placer._injection);
+
+            // Inject memoization instrumentation depending on the number of mutants
+            var mutantIds = targetNode.GetDescendantMutantIds().ToList();
+            var initializer = mutantIds.Count switch
+            {
+                0 => invocation,
+                1 when vdec.Initializer.Value is ConditionalExpressionSyntax ce =>
+                    ParenthesizedExpression(ConditionalExpression(ce.Condition, ce.WhenTrue, invocation))
+                        .WithTriviaFrom(ce),
+                _ =>
+                    ParenthesizedExpression(ConditionalExpression(PrefixUnaryExpression(
+                            SyntaxKind.LogicalNotExpression,
+                            MutantPlacer.MemoizationInstrumentationEngine
+                                .AnyActiveMutantsCheck(mutantIds, context.Placer._injection)
+                        ),
+                        invocation,
+                        vdec.Initializer.Value
+                    ))
+            };
+            declarators.Add( VariableDeclarator(vdec.Identifier).WithInitializer(EqualsValueClause(initializer)) );
         }
 
-        var declaration = VariableDeclaration(vdsMutated.Type)
-            .WithVariables(SeparatedList(declarators));
+        var declaration = VariableDeclaration(vdsMutated.Type).WithVariables(SeparatedList(declarators));
         return LocalDeclarationStatement(declaration);
-
     }
 }
