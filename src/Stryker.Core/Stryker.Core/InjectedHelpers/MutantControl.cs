@@ -91,6 +91,13 @@ namespace Stryker
         // check with: Stryker.MutantControl.AnyActive(IDS)
         public static bool AnyActive(IEnumerable<string> ids)
         {
+
+            if (CaptureCoverage)
+            {
+                // Return true, so that the coverage collector can run the underlaying IsActive calls and register covered mutants
+                return true;
+            }
+
             if (ActiveMutant == ActiveMutantNotInitValue)
             {
 #pragma warning disable CS8600
@@ -114,7 +121,6 @@ namespace Stryker
                     ActiveMutant = -1;
                 }
             }
-
             return ids.Any(id => id == ActiveMutant.ToString());
         }
     }

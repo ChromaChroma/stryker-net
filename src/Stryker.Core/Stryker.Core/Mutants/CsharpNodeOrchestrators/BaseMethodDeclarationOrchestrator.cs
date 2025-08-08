@@ -1,4 +1,5 @@
 using System.Linq;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Stryker.Core.Helpers;
@@ -37,6 +38,7 @@ internal class BaseMethodDeclarationOrchestrator<T> : BaseFunctionOrchestrator<T
         return (T)node.WithBody(null).WithExpressionBody(SyntaxFactory.ArrowExpressionClause(expressionBody)).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
     }
 
-    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier,
-        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, blockBody, methodIdentifier, returnType, inputParameters);
+    protected override BlockSyntax MemoizeBlock(MutationContext context, SemanticModel semanticModel,
+        BlockSyntax blockBody, string methodIdentifier,
+        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, semanticModel, blockBody, methodIdentifier, returnType, inputParameters);
 }

@@ -1,4 +1,5 @@
 using System;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -20,6 +21,7 @@ internal class AnonymousFunctionExpressionOrchestrator : BaseFunctionOrchestrato
         ExpressionSyntax expressionBody) =>
         node.WithBody(blockBody).WithExpressionBody(expressionBody);
 
-    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier,
-        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, blockBody, methodIdentifier, returnType, inputParameters);
+    protected override BlockSyntax MemoizeBlock(MutationContext context, SemanticModel semanticModel,
+        BlockSyntax blockBody, string methodIdentifier,
+        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, semanticModel, blockBody, methodIdentifier, returnType, inputParameters);
 }

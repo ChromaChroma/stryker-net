@@ -33,9 +33,9 @@ public class MutantPlacer
     private static readonly ConditionalInstrumentationEngine ConditionalEngine = new();
     private static readonly EndingReturnEngine EndingReturnEngine = new();
     private static readonly DefaultInitializationEngine DefaultInitializationEngine = new();
-    private static readonly MemoizationInstrumentationEngine MemoizationInstrumentationEngine = new();
+    internal static readonly MemoizationInstrumentationEngine MemoizationInstrumentationEngine = new();
 
-    private readonly CodeInjection _injection;
+    public readonly CodeInjection _injection;
     private ExpressionSyntax _binaryExpression;
     private SyntaxNode _placeHolderNode;
 
@@ -136,17 +136,37 @@ public class MutantPlacer
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationIdMarker, mutationInfo.mutant.Id.ToString()))
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationTypeMarker, mutationInfo.mutant.Mutation.Type.ToString())));
 
+
+    public T MemoRetrieve<T>(string id, Func<T> originalExpr)
+    {
+
+
+        //TODO move out of this function to global scale.
+        Dictionary<string, object> memo = new();
+
+        if (memo.TryGetValue(id, out var value))
+        {
+            return (T)value;
+        }
+
+        var result = originalExpr();
+        memo.Add(id, result);
+        return result;
+    }
+
     /// <summary>
     /// Injects code for storing and retrieving memoized values to a method body block
     /// </summary>
+    /// <param name="semanticModel"></param>
     /// <param name="original">original body of method</param>
     /// <param name="methodIdentifier">identifier of method used for memoization identifier</param>
     /// <param name="returnType">return type of the method to be memoized</param>
     /// <param name="inputParameters"></param>
     /// <returns>a version of the block with injected memoization storing and retrieval code.</returns>
-    public BlockSyntax PlaceMemoizationControlledMutations(BlockSyntax original,
+    public BlockSyntax PlaceMemoizationControlledMutations(SemanticModel semanticModel, BlockSyntax original,
         string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) =>
         MemoizationInstrumentationEngine.PlaceWithMemoizationStatement(
+            semanticModel,
             original,
             methodIdentifier,
             returnType,

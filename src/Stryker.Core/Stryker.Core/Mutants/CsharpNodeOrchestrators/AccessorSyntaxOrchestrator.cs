@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Stryker.Core.Helpers;
@@ -19,6 +20,7 @@ internal class AccessorSyntaxOrchestrator : BaseFunctionOrchestrator<AccessorDec
         => expressionBody == null ? node.WithBody(blockBody).WithExpressionBody(null).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.None))
         : node.WithBody(null).WithExpressionBody(SyntaxFactory.ArrowExpressionClause(expressionBody)).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
 
-    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier,
+    protected override BlockSyntax MemoizeBlock(MutationContext context, SemanticModel semanticModel,
+        BlockSyntax blockBody, string methodIdentifier,
         TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => blockBody;
 }

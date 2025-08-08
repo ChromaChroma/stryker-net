@@ -110,13 +110,15 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
     /// Decide whether to inject memoization or not. Inject it if so.
     /// </summary>
     /// <param name="context">Mutation context needed to use Placer</param>
+    /// <param name="semanticModel"></param>
     /// <param name="blockBody">body to be memoized</param>
     /// <param name="methodIdentifier">identifier unique to function</param>
     /// <param name="returnType">return type of code block</param>
-    /// <param name="node">node of the body and return type, used for identifier creation</param>
     /// <param name="inputParameters">non-out parameters used for identifier</param>
+    /// <param name="node">node of the body and return type, used for identifier creation</param>
     /// <returns>return possibly memoized version of <paramref name="blockBody"/></returns>
-    protected abstract BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters);
+    protected abstract BlockSyntax MemoizeBlock(MutationContext context, SemanticModel semanticModel,
+        BlockSyntax blockBody, string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters);
 
     /// <summary>
     /// Calls the placer to inject memoization in the code block. This can be called from MemoizeBlock if T needs memoization.
@@ -127,9 +129,10 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
     ///
     ///
     /// <returns>an body with memoization injected</returns>
-    protected BlockSyntax InjectMemoization(MutationContext context, BlockSyntax blockBody,
+    protected BlockSyntax InjectMemoization(MutationContext context, SemanticModel semanticModel, BlockSyntax blockBody,
         string methodIdentifier, TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) =>
         context.Placer.PlaceMemoizationControlledMutations(
+            semanticModel,
             blockBody,
             methodIdentifier,
             returnType,
@@ -189,7 +192,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                     .Select(p => SyntaxFactory.IdentifierName(p.Identifier.Text))
                     .ToArray();
 
-                blockBody = MemoizeBlock(context, blockBody, name, returnType, nonOutParameters); //, parameters
+                blockBody = MemoizeBlock(context, semanticModel, blockBody, name, returnType, nonOutParameters); //, parameters
             }
 
 

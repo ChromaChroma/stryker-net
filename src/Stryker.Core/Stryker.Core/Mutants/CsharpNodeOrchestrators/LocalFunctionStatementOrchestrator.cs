@@ -1,4 +1,5 @@
 using System.Linq;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Stryker.Core.Helpers;
@@ -25,6 +26,7 @@ internal class LocalFunctionStatementOrchestrator : BaseFunctionOrchestrator<Loc
     protected override LocalFunctionStatementSyntax SwitchToThisBodies(LocalFunctionStatementSyntax node, BlockSyntax blockBody,
         ExpressionSyntax expressionBody) => node.WithBody(blockBody).WithExpressionBody(expressionBody is null ? null : SyntaxFactory.ArrowExpressionClause(expressionBody));
 
-    protected override BlockSyntax MemoizeBlock(MutationContext context, BlockSyntax blockBody, string methodIdentifier,
-        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, blockBody, methodIdentifier, returnType, inputParameters);
+    protected override BlockSyntax MemoizeBlock(MutationContext context, SemanticModel semanticModel,
+        BlockSyntax blockBody, string methodIdentifier,
+        TypeSyntax returnType, IdentifierNameSyntax[] inputParameters) => InjectMemoization(context, semanticModel, blockBody, methodIdentifier, returnType, inputParameters);
 }
