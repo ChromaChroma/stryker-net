@@ -137,23 +137,6 @@ public class MutantPlacer
                 .WithAdditionalAnnotations(new SyntaxAnnotation(MutationTypeMarker, mutationInfo.mutant.Mutation.Type.ToString())));
 
 
-    public T MemoRetrieve<T>(string id, Func<T> originalExpr)
-    {
-
-
-        //TODO move out of this function to global scale.
-        Dictionary<string, object> memo = new();
-
-        if (memo.TryGetValue(id, out var value))
-        {
-            return (T)value;
-        }
-
-        var result = originalExpr();
-        memo.Add(id, result);
-        return result;
-    }
-
     /// <summary>
     /// Injects code for storing and retrieving memoized values to a method body block
     /// </summary>
