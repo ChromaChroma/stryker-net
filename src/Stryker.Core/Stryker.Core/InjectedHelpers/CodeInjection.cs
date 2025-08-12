@@ -45,8 +45,7 @@ public class CodeInjection
             throw new InvalidDataException("Internal error: failed to find expression for memoization retrieval and storing.");
         }
         MemoizationRetrieveSelector = results2[0].Groups[1].Value;
-        MemoizationStoreSelector = results2[1].Groups[1].Value;
-        MemoizationGenerateIdSelector = results2[2].Groups[1].Value;
+        MemoizationGenerateIdSelector = results2[1].Groups[1].Value;
 
     }
 
@@ -56,8 +55,8 @@ public class CodeInjection
         SelectorExpression = Selector.Replace(StrykerNamespace, HelperNamespace);
         AnyActiveSelectorExpression = AnyActiveSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationRetrieveSelectorExpression = MemoizationRetrieveSelector.Replace(StrykerNamespace, HelperNamespace);
-        MemoizationStoreSelectorExpression = MemoizationStoreSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationGenerateIdSelectorExpression = MemoizationGenerateIdSelector.Replace(StrykerNamespace, HelperNamespace);
+        // MemoizationStoreSelectorExpression = MemoizationStoreSelector.Replace(StrykerNamespace, HelperNamespace);
 
         foreach (var file in Files)
         {

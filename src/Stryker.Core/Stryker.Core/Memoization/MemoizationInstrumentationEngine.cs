@@ -159,7 +159,7 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
         };
 
 
-    public ExpressionSyntax RetrieveMemoizationExpression(LiteralExpressionSyntax id, TypeSyntax type, ParenthesizedLambdaExpressionSyntax func,
+    public InvocationExpressionSyntax RetrieveMemoizationExpression(ExpressionSyntax id, ParenthesizedLambdaExpressionSyntax func, TypeSyntax type,
         CodeInjection injection)
     {
         // Initialize memoization retrieval invocation expression
@@ -272,6 +272,38 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
             )
         );
         return _activeIdsExpression.ReplaceNode(_activeIdsIdPlaceHolderNode, arrayExpression);
+    }
+
+    // Returns an InvocationExpressionSyntax calling memoization control to generate a memoization id at runtime
+    public ExpressionSyntax GenerateMemoId(string methodIdentifier,  ExpressionSyntax[] inputParameters, CodeInjection injection)
+    {
+        // Initialize memoization id generation expression
+        if (_generateIdExpression == null)
+        {
+            _generateIdExpression = ParseExpression(injection.MemoizationGenerateIdSelectorExpression);
+            _generateIdMethodIdentifierPlaceHolderNode = _generateIdExpression.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "ID" });
+            _generateIdParamsPlaceHolderNode = _generateIdExpression.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "PARAMS" });
+        }
+        var arrayExpression = ArrayCreationExpression(
+            ArrayType(PredefinedType(Token(SyntaxKind.ObjectKeyword)).WithLeadingTrivia(Space))
+                .WithRankSpecifiers(SingletonList(
+                    ArrayRankSpecifier(SingletonSeparatedList<ExpressionSyntax>(OmittedArraySizeExpression()))))
+        ).WithInitializer(InitializerExpression(SyntaxKind.ArrayInitializerExpression,
+            SeparatedList<ExpressionSyntax>(inputParameters)));
+
+        var generateIdExpr = _generateIdExpression.ReplaceNodes(
+            [_generateIdMethodIdentifierPlaceHolderNode, _generateIdParamsPlaceHolderNode],
+            (original, _) => original switch
+            {
+                _ when original == _generateIdMethodIdentifierPlaceHolderNode => LiteralExpression(
+                    SyntaxKind.StringLiteralExpression, Literal(methodIdentifier)),
+                _ when original == _generateIdParamsPlaceHolderNode => arrayExpression,
+                _ => original
+            }
+        );
+        return generateIdExpr;
     }
 
     private BlockSyntax InjectMemoizationIdentityDeclaration(BlockSyntax block,
