@@ -1,12 +1,27 @@
+using System;
+
 namespace Stryker
 {
     public static class MemoizationControl
     {
         private static readonly System.Collections.Generic.Dictionary<string, object> MemoizationDict =
             new System.Collections.Generic.Dictionary<string, object>();
-
         // this attribute will be set by the Stryker Data Collector before each test
         public static bool CaptureCoverage;
+
+        static MemoizationControl() {
+            var currentNamespace = typeof(MemoizationControl).Namespace;
+            var assembly = typeof(MemoizationControl).Assembly;
+            var mutantControlType = assembly.GetType($"{currentNamespace}.MutantControl");
+            if (mutantControlType != null)
+            {
+                var captureCoverageField = mutantControlType.GetField("CaptureCoverage");
+                if (captureCoverageField != null)
+                {
+                    CaptureCoverage = (bool)captureCoverageField.GetValue(null)!; // static field, so null instance
+                }
+            }
+        }
 
         // check with: Stryker.MemoizationControl.RetrieveMemoization<T>(ID, FUNC)
         public static T RetrieveMemoization<T>(string id, System.Func<T> func)
@@ -14,22 +29,20 @@ namespace Stryker
             // // Simply runs original code (should result in same mutation score as original)
             // return func.Invoke();
 
-
             if (CaptureCoverage)
             {
                 return func.Invoke();
             }
-            return func.Invoke();
+            // return func.Invoke();
 
+            if (MemoizationDict.TryGetValue(id, out var value))
+            {
+                return (T)value;
+            }
 
-            // if (MemoizationDict.TryGetValue(id, out var value))
-            // {
-            //     return (T)value;
-            // }
-
-            T result = func();
-            MemoizationDict.Add(id, (object)result);
-            return (T)result;
+            T result = func.Invoke();
+            MemoizationDict.Add(id, result);
+            return result;
         }
 
 
