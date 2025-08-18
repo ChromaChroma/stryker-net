@@ -68,6 +68,7 @@ public class StrykerVsTestHostLauncher : IStrykerTestHostLauncher
         {
             Logger.LogError("{Id}: Failed to start process {Arguments}.", _id, processInfo.Arguments);
         }
+        Logger.LogInformation("VsTest process started with ID {Id}", currentProcess.Id);
 
         currentProcess.BeginOutputReadLine();
         currentProcess.BeginErrorReadLine();

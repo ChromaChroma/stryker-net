@@ -68,7 +68,7 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             var variableId = CreateMemoizationVariableId(originalVdec, semanticModel);
             var idExpression = engine.GenerateMemoId(variableId, idsAndMemberAccesses, injection);
             var lambdaExpr = WrapInLambda(rhsExprOriginal);
-            var invocation = engine.RetrieveMemoizationExpression(idExpression, lambdaExpr, declaredType, injection);
+            var invocation = engine.RetrieveMemoizationExpression(idExpression, lambdaExpr, null, declaredType, injection);
             var newVdec = InjectStatementMemoization(vdec, invocation, targetNode, injection);
             return newVdec;
         });

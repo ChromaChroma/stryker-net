@@ -41,6 +41,7 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
     private ExpressionSyntax _retrieveMemoizationExpression;
     private SyntaxNode _retrieveMemoizationIdPlaceHolderNode;
     private SyntaxNode _retrieveMemoizationFuncPlaceHolderNode;
+    private SyntaxNode _retrieveMemoizationPredPlaceHolderNode;
 
 
     protected override SyntaxNode Revert(BlockSyntax node) => throw new NotImplementedException();
@@ -159,7 +160,9 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
         };
 
 
-    public InvocationExpressionSyntax RetrieveMemoizationExpression(ExpressionSyntax id, ParenthesizedLambdaExpressionSyntax func, TypeSyntax type,
+    public InvocationExpressionSyntax RetrieveMemoizationExpression(
+        ExpressionSyntax id, ParenthesizedLambdaExpressionSyntax func,
+        ExpressionSyntax pred, TypeSyntax type,
         CodeInjection injection)
     {
         // Initialize memoization retrieval invocation expression
@@ -170,14 +173,19 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
                 .First(n => n is IdentifierNameSyntax { Identifier.Text: "ID" });
             _retrieveMemoizationFuncPlaceHolderNode = _retrieveMemoizationExpression.DescendantNodes()
                 .First(n => n is IdentifierNameSyntax { Identifier.Text: "FUNC" });
+            _retrieveMemoizationPredPlaceHolderNode = _retrieveMemoizationExpression.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "PRED" });
         }
 
+        pred ??= LiteralExpression(SyntaxKind.NullLiteralExpression);
+
         var retrieveExpr = _retrieveMemoizationExpression.ReplaceNodes(
-            [_retrieveMemoizationIdPlaceHolderNode, _retrieveMemoizationFuncPlaceHolderNode],
+            [_retrieveMemoizationIdPlaceHolderNode, _retrieveMemoizationFuncPlaceHolderNode, _retrieveMemoizationPredPlaceHolderNode],
             (original, _) => original switch
             {
                 _ when original == _retrieveMemoizationIdPlaceHolderNode => id,
                 _ when original == _retrieveMemoizationFuncPlaceHolderNode => func,
+                _ when original == _retrieveMemoizationPredPlaceHolderNode => pred,
                 _ => original
             }
         );

@@ -23,7 +23,7 @@ public class UtilityFunctions
             {
                 return ParseTypeName(
                     ModelExtensions.GetTypeInfo(semanticModel, variableValue).Type!.ToDisplayString(SymbolDisplayFormat
-                        .MinimallyQualifiedFormat));
+                        .FullyQualifiedFormat));
             }
         }
 
@@ -41,6 +41,10 @@ public class UtilityFunctions
         ParenthesizedLambdaExpression()
             .WithParameterList(ParameterList())
             .WithBlock(Block(ReturnStatement(expr.WithLeadingTrivia(Space))));
+    public static ParenthesizedLambdaExpressionSyntax WrapInLambda(BlockSyntax block) =>
+        ParenthesizedLambdaExpression()
+            .WithParameterList(ParameterList())
+            .WithBody(block);
 
     public static VariableDeclaratorSyntax InjectStatementMemoization(
         VariableDeclaratorSyntax vdec, ExpressionSyntax invocation, SyntaxNode targetNode, CodeInjection injection)
