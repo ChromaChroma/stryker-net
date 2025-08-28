@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Stryker.Abstractions;
 using Stryker.Abstractions.Options;
 using Stryker.Core.Compiling;
+using Stryker.Core.Memoization;
 using Stryker.Core.MutantFilters;
 using Stryker.Core.Mutants;
 using Stryker.Core.ProjectComponents;
@@ -58,15 +59,35 @@ public class CsharpMutationProcess : IMutationProcess
         var projectInfo = input.SourceProjectInfo.ProjectContents;
         var orchestrator = _orchestrator ?? new CsharpMutantOrchestrator(new MutantPlacer(input.SourceProjectInfo.CodeInjector), options: _options);
         var compilingProcess = new CsharpCompilingProcess(input, options: _options);
-        var semanticModels = compilingProcess.GetSemanticModels(projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().Select(x => x.SyntaxTree));
+        var semanticModels = compilingProcess.GetSemanticModels(projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().Select(x => x.SyntaxTree)).ToArray();
 
-        //TODO remove when done with POC
-        var logger = ApplicationLogging.LoggerFactory.CreateLogger<CsharpMutationProcess>();
+
+        var fileLeaves = projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().ToArray();
+        var tc = new TypeCollector(semanticModels);
+        tc.CollectTypes(fileLeaves.Select(l => l.SyntaxTree));
+        _logger.LogInformation($"tc.Types Length is :: {tc.Types.Count}");
+        foreach (var typeSymbol in tc.Types)
+        {
+            _logger.LogInformation($":: {typeSymbol.ToDisplayString()}");
+        }
+        _logger.LogInformation($"Error nodes length is:: {tc.ErrorTypeNodes.Count}");
+        foreach (var errorNodes in tc.ErrorTypeNodes)
+        {
+            _logger.LogInformation($":: {errorNodes}");
+        }
+
 
         // Mutate source files
-        foreach (var file in projectInfo.GetAllFiles().Cast<CsharpFileLeaf>())
+        foreach (var file in fileLeaves)
         {
             _logger.LogDebug("Mutating {FilePath}", file.FullPath);
+
+            // var tc = new TypeCollector(semanticModels.First(x => x.SyntaxTree == file.SyntaxTree));
+            // tc.Visit(file.SyntaxTree.GetRoot());
+            // _logger.LogInformation("Types of file {Filename}: {TypeList}", file.FullPath, tc.Types.ToList());
+
+
+
             // Mutate the syntax tree
             var mutatedSyntaxTree = orchestrator.Mutate(file.SyntaxTree, semanticModels.First(x => x.SyntaxTree == file.SyntaxTree));
 
