@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -48,11 +49,37 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 return vdec;
             }
 
-            var identifiers = semanticModel.AnalyzeDataFlow(originalVdec.Initializer.Value)?
+            var analyzedIdentifiers = semanticModel.AnalyzeDataFlow(originalVdec.Initializer.Value)?
                 .ReadInside
                 .Where(s => s.Name != "this" && s.Name != "value")
-                .Select(s => IdentifierName(s.Name));
+                .Where(s => s switch
+                {
+                    ILocalSymbol local => !local.IsImplicitlyDeclared,
+                    IParameterSymbol param => !(param.ContainingSymbol is IMethodSymbol method && method.MethodKind == MethodKind.AnonymousFunction),
+                    IFieldSymbol or IPropertySymbol => true,
+                    _ => false
+                })
+                .ToArray();
 
+            var hasRefTypes = analyzedIdentifiers.Any(s => s switch
+            {
+                ILocalSymbol local => local.Type.IsRefLikeType,
+                IParameterSymbol param => param.Type.IsRefLikeType || param.RefKind == RefKind.RefReadOnly,
+                IFieldSymbol field => field.Type.IsRefLikeType,
+                _ => false,
+            });
+
+            if (analyzedIdentifiers.Any(i => i.Name == "reader"))
+            {
+                Console.WriteLine((""));
+            }
+            if (hasRefTypes)
+            {
+                // Disallow ref types due to not being allowed in lambdas, return original
+                return vdec;
+            }
+
+            var identifiers = analyzedIdentifiers.Select(s => IdentifierName(s.Name));
 
             //todo: Check how we can use vars from memeraccesses, and also return values from method calls.
             var idsAndMemberAccesses = identifiers.ToArray();
@@ -68,7 +95,8 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             var variableId = CreateMemoizationVariableId(originalVdec, semanticModel);
             var idExpression = engine.GenerateMemoId(variableId, idsAndMemberAccesses, injection);
             var lambdaExpr = WrapInLambda(rhsExprOriginal);
-            var invocation = engine.RetrieveMemoizationExpression(idExpression, lambdaExpr, null, declaredType, injection);
+            var invocation =
+                engine.RetrieveMemoizationExpression(idExpression, lambdaExpr, null, declaredType, injection);
             var newVdec = InjectStatementMemoization(vdec, invocation, targetNode, injection);
             return newVdec;
         });
