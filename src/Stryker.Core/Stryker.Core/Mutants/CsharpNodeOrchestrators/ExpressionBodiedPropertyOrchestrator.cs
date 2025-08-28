@@ -10,6 +10,8 @@ internal class ExpressionBodiedPropertyOrchestrator : BaseFunctionOrchestrator<P
 {
     protected override bool CanHandle(PropertyDeclarationSyntax t) => t.ExpressionBody != null || t.Initializer != null && t.IsStatic();
 
+    protected override bool IsStatic(PropertyDeclarationSyntax node) => node.IsStatic();
+
     protected override (BlockSyntax block, ExpressionSyntax expression) GetBodies(PropertyDeclarationSyntax node) => (node.GetAccessor()?.Body, node.ExpressionBody?.Expression);
 
     protected override ParameterListSyntax ParameterList(PropertyDeclarationSyntax node) => SyntaxFactory.ParameterList();

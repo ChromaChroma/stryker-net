@@ -3,11 +3,14 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Stryker.Core.Helpers;
+using SyntaxKind = Microsoft.CodeAnalysis.VisualBasic.SyntaxKind;
 
 namespace Stryker.Core.Mutants.CsharpNodeOrchestrators;
 
 internal class LocalFunctionStatementOrchestrator : BaseFunctionOrchestrator<LocalFunctionStatementSyntax>
 {
+    protected override bool IsStatic(LocalFunctionStatementSyntax node) => node.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
+
     protected override (BlockSyntax block, ExpressionSyntax expression) GetBodies(LocalFunctionStatementSyntax node) => (node.Body, node.ExpressionBody?.Expression);
 
     protected override ParameterListSyntax ParameterList(LocalFunctionStatementSyntax node) => node.ParameterList;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -34,6 +35,8 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
     /// <inheritdoc/>
     public string InstrumentEngineId => GetType().Name;
+
+    protected abstract bool IsStatic(T node);
 
     /// <summary>
     /// Get the function body (block or expression)
@@ -145,6 +148,20 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
     protected override T InjectMutations(T sourceNode, T targetNode, SemanticModel semanticModel,
         MutationContext context)
     {
+
+        static bool IsJsonSerializable(Type type)
+        {
+            try
+            {
+                var obj = Activator.CreateInstance(type);
+                JsonSerializer.Serialize(obj, type);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
         var (blockBody, expressionBody) = GetBodies(targetNode);
 
         if (expressionBody == null && blockBody == null)
@@ -158,6 +175,8 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         var parameters = ParameterList(sourceNode)?.Parameters ?? _emptyParameterList;
 
         var outParams = parameters.Where(p => p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword)))
+            .ToList();
+        var refParams = parameters.Where(p => p.Modifiers.Any(m => m.IsKind(SyntaxKind.RefKeyword)))
             .ToList();
         var inParams = parameters.Where(p => !p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword)))
             .ToList();
@@ -193,7 +212,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
 
             // TODO Memoize out vars (IGNORE FOR NOW)
-            if (outParams is { Count: > 0 })
+            if (outParams is { Count: > 0 }  || refParams is { Count: > 0 })
             {
                 //todo
                 // If id.... set out params to its memoization value.
@@ -201,19 +220,35 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
                 // out var en return val kunnen ook ene niet andere wel gememoized zijn.
             }
+            // sourceNode.SyntaxTree.GetRoot().DescendantNodes().Select(n => )
 
-            if (!returnType.IsVoid() &&  !sourceNode.DescendantNodes().OfType<YieldStatementSyntax>().Any()) //Assuming Stryker will not inject Yields
+            if (refParams.Count > 0)
+            {
+                Console.Write("");
+            }
+            if (!returnType.IsVoid()
+                && !sourceNode.DescendantNodes().OfType<YieldStatementSyntax>().Any()
+                && outParams.Count == 0
+                && refParams.Count == 0) //Assuming Stryker will not inject Yields
             {
                 // Input: (in)Params, other variables, code location+method.
                 var df = semanticModel.AnalyzeDataFlow(GetBodies(sourceNode).block).ReadInside;
-                var allParameters = inParams.Select(p => IdentifierName(p.Identifier.Text))
-                    .Cast<ExpressionSyntax>()
-                    .Append(ThisExpression())
-                    .ToArray();
+                var allParameters = inParams
+                    // .Where(p => semanticModel.GetTypeInfo(p).Type.)
+                    .Select(p => IdentifierName(p.Identifier.Text))
+                    .Cast<ExpressionSyntax>().ToArray();
+
+                if (!IsStatic(sourceNode))
+                {
+                    allParameters = allParameters.Append(ThisExpression()).ToArray();
+
+                }
                 //Ignored vvoor nu, data in exact (method calls ook, niet te herkennen)
                 // df.Where(s => s.Name != "this" && s.Name != "value")
                     // .Select(s => IdentifierName(s.Name))
                     // .Concat( inParams.Select(p => IdentifierName(p.Identifier.Text)).ToArray());
+
+
 
                 //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
                 var memoizationIdentifier = MutantPlacer.MemoizationInstrumentationEngine
