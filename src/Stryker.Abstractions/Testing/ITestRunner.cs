@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Stryker.Abstractions.Memoization;
 
 namespace Stryker.Abstractions.Testing;
 
@@ -8,7 +9,8 @@ public interface ITestRunner : IDisposable
     public delegate bool TestUpdateHandler(IReadOnlyList<IMutant> testedMutants,
        ITestIdentifiers failedTests,
        ITestIdentifiers ranTests,
-       ITestIdentifiers timedOutTests);
+       ITestIdentifiers timedOutTests,
+       IEnumerable<MetricData> memoizationData);
 
     bool DiscoverTests(string assembly);
 

@@ -30,12 +30,21 @@ public class UtilityFunctions
         return vds.Type;
     }
 
-    public static string CreateMemoizationVariableId(VariableDeclaratorSyntax vds, SemanticModel semanticModel) =>
-        $"{vds.SyntaxTree.GetLineSpan(vds.Span).StartLinePosition}" +
-        $"__" +
-        $"{semanticModel.GetEnclosingSymbol(vds.SpanStart)?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}" +
-        $"__" +
-        $"{vds.Identifier.ValueText}";
+    public static string CreateMemoizationVariableId(VariableDeclaratorSyntax vds, SemanticModel semanticModel)
+    {
+        var n = vds.FirstAncestorOrSelf<BaseMethodDeclarationSyntax>();
+        if (n is null) return null;
+        return $"{vds.SyntaxTree.GetLineSpan(vds.Span).StartLinePosition}__" +
+               $"{MemoizationInstrumentationEngine.GetFullMethodSignature(n, semanticModel)}__RETURN";
+
+        return $"{vds.SyntaxTree.GetLineSpan(vds.Span).StartLinePosition}" +
+               $"__" +
+               $"{semanticModel.GetEnclosingSymbol(vds.SpanStart)?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}" +
+               $"__" +
+               $"{vds.Identifier.ValueText}";
+    }
+
+
 
     public static ParenthesizedLambdaExpressionSyntax WrapInLambda(ExpressionSyntax expr) =>
         ParenthesizedLambdaExpression()

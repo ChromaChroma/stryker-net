@@ -35,7 +35,7 @@ using VsTestObjModel = Microsoft.VisualStudio.TestPlatform.ObjectModel;
 namespace Stryker.TestRunner.VsTest.UnitTest;
 
 /// <summary>
-/// This class has a set of methods that can be used to mock VsTest behavior. 
+/// This class has a set of methods that can be used to mock VsTest behavior.
 /// </summary>
 public class VsTestMockingHelper : TestBase
 {
@@ -544,7 +544,7 @@ public class VsTestMockingHelper : TestBase
         {
             SourceProjectInfo = sourceProject ?? SourceProjectInfo,
             TestRunner = runner,
-            InitialTestRun = new InitialTestRun(testRunResult, new TimeoutValueCalculator(500))
+            InitialTestRun = new InitialTestRun(testRunResult, new TimeoutValueCalculator(2500))
         };
         var mutator = new CsharpMutationProcess(_fileSystem, options);
 

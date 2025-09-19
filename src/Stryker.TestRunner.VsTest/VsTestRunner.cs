@@ -8,8 +8,10 @@ using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel.Client;
 using Stryker.Abstractions;
 using Stryker.Abstractions.Exceptions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Options;
 using Stryker.Abstractions.Testing;
+using Stryker.DataCollector;
 using Stryker.TestRunner.Results;
 using Stryker.TestRunner.Tests;
 using Stryker.Utilities.Buildalyzer;
@@ -96,7 +98,8 @@ public sealed class VsTestRunner : IDisposable
         if (timeoutCalc != null && testCases != null)
         {
             // compute time out
-            timeOutMs = timeoutCalc.CalculateTimeoutValue((int)testCases.Sum(id => _context.VsTests[Guid.Parse(id)].InitialRunTime.TotalMilliseconds));
+            timeOutMs = timeoutCalc.CalculateTimeoutValue((int)testCases.Sum(id =>
+                _context.VsTests[Guid.Parse(id)].InitialRunTime.TotalMilliseconds));
         }
 
         if (timeOutMs.HasValue)
@@ -104,11 +107,12 @@ public sealed class VsTestRunner : IDisposable
             _logger.LogDebug("{RunnerId}: Using {timeOutMs} ms as test run timeout", RunnerId, timeOutMs);
         }
 
-        var testResults = RunTestSession(new TestIdentifierList(testCases), project, timeOutMs, mutantTestsMap, HandleUpdate);
+        var testResults = RunTestSession(new TestIdentifierList(testCases), project, timeOutMs, mutantTestsMap,
+            HandleUpdate);
 
         return BuildTestRunResult(testResults, expectedTests, totalCountOfTests);
 
-        void HandleUpdate(IRunResults handler)
+        void HandleUpdate(IRunResults handler, EventArgs e)
         {
             var handlerTestResults = handler.TestResults;
             var tests = handlerTestResults.Select(p => p.TestCase.Id).Distinct().Count() >= totalCountOfTests
@@ -118,7 +122,43 @@ public sealed class VsTestRunner : IDisposable
                 .Where(tr => tr.Outcome == TestOutcome.Failed)
                 .Select(t => t.TestCase.Id.ToString()));
             var timedOutTest = new WrappedIdentifierEnumeration(handler.TestsInTimeout?.Select(t => t.Id.ToString()));
-            var remainingMutants = update?.Invoke(mutants, failedTest, tests, timedOutTest);
+
+            IEnumerable<MetricData> memoizationData = [];
+            if (e is BoolEventArgs { Flag: true })
+            {
+                memoizationData = handlerTestResults.SelectMany(testResult =>
+                {
+                    var (mdcKey, mdcValue) = testResult.GetProperties()
+                        .FirstOrDefault(x => x.Key.Id == MemoizationDataCollector.PropertyName);
+                    var mdcRecordValue = mdcValue as string;
+                    var memoizationDataList = string.IsNullOrWhiteSpace(mdcRecordValue)
+                        ? []
+                        : mdcRecordValue.TrimEnd(';').Split(';')
+                            .Select(recordString =>
+                            {
+                                var parts = recordString.Split('†');
+                                return new MetricData(
+                                    parts[0],
+                                    parts[1],
+                                    bool.Parse(parts[2]),
+                                    long.Parse(parts[3]),
+                                    long.Parse(parts[4]),
+                                    long.Parse(parts[5]),
+                                    long.Parse(parts[6]),
+                                    long.Parse(parts[7]),
+                                    long.Parse(parts[8])
+                                );
+                            }).ToList();
+                    // Todo restructure to have all null checks. and fit into the scoped code here.
+                    // string.IsNullOrEmpty(parts[0])
+                    //     ? Enumerable.Empty<int>()
+                    //     : parts[0].Split(',').Select(int.Parse);
+                    return memoizationDataList;
+                });
+            }
+
+
+            var remainingMutants = update?.Invoke(mutants, failedTest, tests, timedOutTest, memoizationData);
 
             if (remainingMutants != false
                 || handlerTestResults.Count >= expectedTests
@@ -134,17 +174,19 @@ public sealed class VsTestRunner : IDisposable
             {
                 _vsTestConsole.CancelTestRun();
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error while cancelling VsTest session.");
                 // recycle the session
                 PrepareVsTestConsole();
             }
+
             _currentSessionCancelled = true;
         }
     }
 
-    private ICollection<string> TestCases(IReadOnlyList<IMutant> mutants, Dictionary<int, ITestIdentifiers> mutantTestsMap)
+    private ICollection<string> TestCases(IReadOnlyList<IMutant> mutants,
+        Dictionary<int, ITestIdentifiers> mutantTestsMap)
     {
         ICollection<string> testCases;
         // if we optimize the number of tests to run
@@ -181,7 +223,7 @@ public sealed class VsTestRunner : IDisposable
     }
 
     private TestRunResult BuildTestRunResult(IRunResults testResults, int expectedTests, int totalCountOfTests,
-            bool compressAll = true)
+        bool compressAll = true)
     {
         var resultAsArray = testResults.TestResults.ToArray();
         var testCases = resultAsArray.Select(t => t.TestCase.Id.ToString()).ToHashSet();
@@ -194,7 +236,8 @@ public sealed class VsTestRunner : IDisposable
         var ranTests = compressAll && totalCountOfTests > 0 && ranTestsCount >= totalCountOfTests
             ? TestIdentifierList.EveryTest()
             : new WrappedIdentifierEnumeration(testCases);
-        var failedTests = resultAsArray.Where(tr => tr.Outcome == TestOutcome.Failed).Select(t => t.TestCase.Id.ToString());
+        var failedTests = resultAsArray.Where(tr => tr.Outcome == TestOutcome.Failed)
+            .Select(t => t.TestCase.Id.ToString());
 
         if (ranTests.IsEmpty && (testResults.TestsInTimeout == null || testResults.TestsInTimeout.Count == 0))
         {
@@ -207,24 +250,30 @@ public sealed class VsTestRunner : IDisposable
             resultAsArray.Where(tr => !string.IsNullOrWhiteSpace(tr.ErrorMessage))
                 .Select(tr => $"{tr.DisplayName}{Environment.NewLine}{Environment.NewLine}{tr.ErrorMessage}"));
         var messages = resultAsArray.Select(tr =>
-                $"{tr.DisplayName}{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, tr.Messages.Select(tm => tm.Text))}");
+            $"{tr.DisplayName}{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, tr.Messages.Select(tm => tm.Text))}");
         var failedTestsDescription = new WrappedIdentifierEnumeration(failedTests);
         var timedOutTests = new WrappedIdentifierEnumeration(testResults.TestsInTimeout?.Select(t => t.Id.ToString()));
         return timeout
-                ? TestRunResult.TimedOut(_context.VsTests.Values, ranTests, failedTestsDescription, timedOutTests,
-                    errorMessages, messages, duration)
-                : new TestRunResult(_context.VsTests.Values, ranTests, failedTestsDescription, timedOutTests, errorMessages,
-                    messages, duration);
+            ? TestRunResult.TimedOut(_context.VsTests.Values, ranTests, failedTestsDescription, timedOutTests,
+                errorMessages, messages, duration)
+            : new TestRunResult(_context.VsTests.Values, ranTests, failedTestsDescription, timedOutTests, errorMessages,
+                messages, duration);
     }
 
-    public IRunResults RunTestSession(ITestIdentifiers testsToRun, IProjectAndTests project, int? timeout = null, Dictionary<int, ITestIdentifiers> mutantTestsMap = null, Action<IRunResults> updateHandler = null) =>
-        RunTestSession(testsToRun, project, false, timeout, updateHandler, mutantTestsMap).normal;
+    public IRunResults RunTestSession(ITestIdentifiers testsToRun, IProjectAndTests project, int? timeout = null,
+        Dictionary<int, ITestIdentifiers> mutantTestsMap = null, Action<IRunResults, EventArgs> updateHandler = null) =>
+        RunTestSession(testsToRun, project, false, true, timeout, updateHandler, mutantTestsMap).normal;
 
     public IRunResults RunCoverageSession(ITestIdentifiers testsToRun, IProjectAndTests project) =>
-        RunTestSession(testsToRun, project, true).raw;
+        RunTestSession(testsToRun, project, true, true).raw;
 
-    private (IRunResults normal, IRunResults raw) RunTestSession(ITestIdentifiers tests, IProjectAndTests projectAndTests,
-        bool forCoverage, int? timeOut = null, Action<IRunResults> updateHandler = null,
+    private (IRunResults normal, IRunResults raw) RunTestSession(
+        ITestIdentifiers tests,
+        IProjectAndTests projectAndTests,
+        bool forCoverage,
+        bool trackMemoizationMetrics,
+        int? timeOut = null,
+        Action<IRunResults, EventArgs> updateHandler = null,
         Dictionary<int, ITestIdentifiers> mutantTestsMap = null)
     {
         var sources = projectAndTests.GetTestAssemblies();
@@ -246,17 +295,21 @@ public sealed class VsTestRunner : IDisposable
         };
 
         runEventHandler.ResultsUpdated += HandlerUpdate;
+
         // work around VsTest issues when using multiple test assemblies
         foreach (var source in projectAndTests.TestProjectsInfo.AnalyzerResults)
         {
             var testForSource = _context.TestsPerSource[source.GetAssemblyPath()];
-            var testsForAssembly = new TestIdentifierList(tests.GetIdentifiers().Where(id => testForSource.Contains(Guid.Parse(id))));
+            var testsForAssembly =
+                new TestIdentifierList(tests.GetIdentifiers().Where(id => testForSource.Contains(Guid.Parse(id))));
             if (!tests.IsEveryTest && testsForAssembly.Count == 0)
             {
                 // skip empty assemblies
                 continue;
             }
-            var runSettings = _context.GenerateRunSettings(timeOut, forCoverage, mutantTestsMap,
+
+            var runSettings = _context.GenerateRunSettings(timeOut, forCoverage, trackMemoizationMetrics,
+                mutantTestsMap,
                 projectAndTests.HelperNamespace, source.TargetFramework, source.TargetPlatform());
             _logger.LogTrace("{RunnerId}: testing assembly {source}.", RunnerId, source);
             var activeId = -1;
@@ -264,6 +317,7 @@ public sealed class VsTestRunner : IDisposable
             {
                 activeId = mutantTestsMap.Keys.First();
             }
+
             Environment.SetEnvironmentVariable(ControlVariableName, activeId.ToString());
             RunVsTest(tests, source.GetAssemblyPath(), runSettings, options, timeOut, runEventHandler);
 
@@ -278,12 +332,12 @@ public sealed class VsTestRunner : IDisposable
 
         void HandlerUpdate(object sender, EventArgs e)
         {
-            updateHandler?.Invoke(runEventHandler.GetResults());
+            updateHandler?.Invoke(runEventHandler.GetResults(), e);
         }
     }
 
     private void RunVsTest(ITestIdentifiers tests, string source, string runSettings, TestPlatformOptions options,
-            int? timeOut, RunEventHandler eventHandler)
+        int? timeOut, RunEventHandler eventHandler)
     {
         var attempt = 0;
         while (attempt < MaxAttempts)
@@ -293,25 +347,25 @@ public sealed class VsTestRunner : IDisposable
             eventHandler.StartSession();
             _currentSessionCancelled = false;
             var session = Task.Run(() =>
+            {
+                if (tests.IsEveryTest)
                 {
-                    if (tests.IsEveryTest)
+                    _vsTestConsole.RunTestsWithCustomTestHost([source], runSettings, options, eventHandler,
+                        strykerVsTestHostLauncher);
+                }
+                else
+                {
+                    var actualTestCases = tests.GetIdentifiers().Select(id =>
                     {
-                        _vsTestConsole.RunTestsWithCustomTestHost([source], runSettings, options, eventHandler,
-                            strykerVsTestHostLauncher);
-                    }
-                    else
-                    {
-                        var actualTestCases = tests.GetIdentifiers().Select(id =>
-                        {
-                            var testCase = (VsTestCase)_context.VsTests[Guid.Parse(id)].Case;
-                            return testCase.OriginalTestCase;
-                        });
-                        var testCases = actualTestCases;
-                        _vsTestConsole.RunTestsWithCustomTestHost(
-                            testCases,
-                            runSettings, options, eventHandler, strykerVsTestHostLauncher);
-                    }
-                });
+                        var testCase = (VsTestCase)_context.VsTests[Guid.Parse(id)].Case;
+                        return testCase.OriginalTestCase;
+                    });
+                    var testCases = actualTestCases;
+                    _vsTestConsole.RunTestsWithCustomTestHost(
+                        testCases,
+                        runSettings, options, eventHandler, strykerVsTestHostLauncher);
+                }
+            });
 
             if (WaitForEnd(session, eventHandler, timeOut, ref attempt))
             {
@@ -323,6 +377,7 @@ public sealed class VsTestRunner : IDisposable
             {
                 return;
             }
+
             attempt++;
             if (attempt < MaxAttempts)
             {

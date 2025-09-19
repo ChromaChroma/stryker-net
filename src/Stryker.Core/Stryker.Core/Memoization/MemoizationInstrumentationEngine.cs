@@ -282,6 +282,48 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
         return _activeIdsExpression.ReplaceNode(_activeIdsIdPlaceHolderNode, arrayExpression);
     }
 
+    public static string GetFullMethodSignature(BaseMethodDeclarationSyntax methodNode, SemanticModel model)
+    {
+        // Get the declared symbol
+        var symbol = model.GetDeclaredSymbol(methodNode);
+        if (symbol == null) return string.Empty;
+
+        // Modifiers
+        var modifiers = methodNode.Modifiers.ToString().Trim();
+
+        // Return type (constructors don’t have it)
+        var returnType = (methodNode as MethodDeclarationSyntax)?.ReturnType?.ToFullString().Trim();
+
+        // Fully qualified containing type
+        var containingType = symbol.ContainingType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var containingNamespace = symbol.ContainingNamespace.ToDisplayString();
+
+        // Name
+        var name = symbol.Name; // works for methods, constructors, operators, etc.
+
+        // Parameters (already formatted nicely by symbol)
+        var parameters = symbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        // but that includes return type. If you only want (args):
+        var parameterList = symbol.Parameters.Length > 0
+            ? $"({string.Join(", ", symbol.Parameters.Select(p => p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)))})"
+            : "()";
+
+        // Build signature
+        string signature;
+        if (!string.IsNullOrEmpty(returnType))
+        {
+            // Normal method
+            signature = $"{modifiers} {returnType} {containingNamespace}.{containingType}.{name}{parameterList}";
+        }
+        else
+        {
+            // Constructor or void operator etc.
+            signature = $"{modifiers} {containingNamespace}.{containingType}.{name}{parameterList}";
+        }
+
+        return signature.Trim();
+    }
+
     // Returns an InvocationExpressionSyntax calling memoization control to generate a memoization id at runtime
     public ExpressionSyntax GenerateMemoId(string methodIdentifier,  ExpressionSyntax[] inputParameters, CodeInjection injection)
     {

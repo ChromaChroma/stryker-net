@@ -15,7 +15,7 @@ public class CodeInjection
         "Stryker.Core.InjectedHelpers.MutantControl.cs",
         "Stryker.Core.InjectedHelpers.Coverage.MutantContext.cs",
         "Stryker.Core.InjectedHelpers.MemoizationControl.cs",
-        "Stryker.Core.InjectedHelpers.DebugControl.cs",
+        // "Stryker.Core.InjectedHelpers.DebugControl.cs",
     };
     private const string PatternForCheck = "\\/\\/ *check with: *([^\\r\\n]+)";
     private const string MutantContextClassName = "MutantContext";

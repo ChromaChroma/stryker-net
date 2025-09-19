@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Stryker.Abstractions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.ProjectComponents;
 using Stryker.Abstractions.Reporting;
 
@@ -25,6 +26,7 @@ public class BroadcastReporter : IReporter
         {
             reporter.OnMutantsCreated(reportComponent, testProjectsInfo);
         }
+
         // todo: refactor to lifecycle event
         if ((reportComponent.Mutants ?? Enumerable.Empty<IReadOnlyMutant>()).Any())
         {
@@ -59,6 +61,14 @@ public class BroadcastReporter : IReporter
         foreach (var reporter in Reporters)
         {
             reporter.OnAllMutantsTested(reportComponent, testProjectsInfo);
+        }
+    }
+
+    public void OnMutantsOfProjectTested(IMetricDataCollection collector)
+    {
+        foreach (var reporter in Reporters)
+        {
+            reporter.OnMutantsOfProjectTested(collector);
         }
     }
 }

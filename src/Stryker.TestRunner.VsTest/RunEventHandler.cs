@@ -54,6 +54,15 @@ public class SimpleRunResults : IRunResults
         return this;
     }
 }
+public class BoolEventArgs : EventArgs
+{
+    public bool Flag { get; }
+
+    public BoolEventArgs(bool flag)
+    {
+        Flag = flag;
+    }
+}
 
 public sealed class RunEventHandler : ITestRunEventsHandler
 {
@@ -69,6 +78,7 @@ public sealed class RunEventHandler : ITestRunEventsHandler
     private bool _completed;
 
     public event EventHandler ResultsUpdated;
+    public event EventHandler OnTestCompleted;
 
     public bool CancelRequested { get; set; }
 
@@ -169,7 +179,7 @@ public sealed class RunEventHandler : ITestRunEventsHandler
                 .Union(_runs.Values.Where(t => !t.IsComplete()).Select(t => t.Result().TestCase)).ToList());
         }
 
-        ResultsUpdated?.Invoke(this, EventArgs.Empty);
+        ResultsUpdated?.Invoke(this, new BoolEventArgs(true));
 
         if (testRunCompleteArgs.Error != null)
         {

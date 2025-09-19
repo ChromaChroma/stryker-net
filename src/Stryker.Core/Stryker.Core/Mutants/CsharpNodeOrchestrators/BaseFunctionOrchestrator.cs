@@ -148,20 +148,6 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
     protected override T InjectMutations(T sourceNode, T targetNode, SemanticModel semanticModel,
         MutationContext context)
     {
-
-        static bool IsJsonSerializable(Type type)
-        {
-            try
-            {
-                var obj = Activator.CreateInstance(type);
-                JsonSerializer.Serialize(obj, type);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
         var (blockBody, expressionBody) = GetBodies(targetNode);
 
         if (expressionBody == null && blockBody == null)
@@ -181,12 +167,10 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         var inParams = parameters.Where(p => !p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword)))
             .ToList();
 
-        var methodMemoizationId =
-            $"{sourceNode.SyntaxTree.GetLineSpan(sourceNode.Span).StartLinePosition}" +
-            $"__" +
-            $"{semanticModel.GetEnclosingSymbol(sourceNode.SpanStart)?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)}" +
-            $"__";
-        var methodReturnMemoizationId = methodMemoizationId + "RETURN";
+        var methodReturnMemoizationId = sourceNode is BaseMethodDeclarationSyntax methodDeclarationSyntax
+            ? $"{sourceNode.SyntaxTree.GetLineSpan(sourceNode.Span).StartLinePosition}__" +
+              $"{MemoizationInstrumentationEngine.GetFullMethodSignature(methodDeclarationSyntax, semanticModel)}__RETURN"
+            : null;
 
         // no mutations to inject
         if (!context.HasLeftOverMutations)
@@ -212,7 +196,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
 
             // TODO Memoize out vars (IGNORE FOR NOW)
-            if (outParams is { Count: > 0 }  || refParams is { Count: > 0 })
+            if (outParams is { Count: > 0 } || refParams is { Count: > 0 })
             {
                 //todo
                 // If id.... set out params to its memoization value.
@@ -226,10 +210,12 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             {
                 Console.Write("");
             }
+
             if (!returnType.IsVoid()
                 && !sourceNode.DescendantNodes().OfType<YieldStatementSyntax>().Any()
                 && outParams.Count == 0
-                && refParams.Count == 0) //Assuming Stryker will not inject Yields
+                && refParams.Count == 0
+                && methodReturnMemoizationId != null) //Assuming Stryker will not inject Yields
             {
                 // Input: (in)Params, other variables, code location+method.
                 var df = semanticModel.AnalyzeDataFlow(GetBodies(sourceNode).block).ReadInside;
@@ -241,13 +227,11 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 if (!IsStatic(sourceNode))
                 {
                     allParameters = allParameters.Append(ThisExpression()).ToArray();
-
                 }
                 //Ignored vvoor nu, data in exact (method calls ook, niet te herkennen)
                 // df.Where(s => s.Name != "this" && s.Name != "value")
-                    // .Select(s => IdentifierName(s.Name))
-                    // .Concat( inParams.Select(p => IdentifierName(p.Identifier.Text)).ToArray());
-
+                // .Select(s => IdentifierName(s.Name))
+                // .Concat( inParams.Select(p => IdentifierName(p.Identifier.Text)).ToArray());
 
 
                 //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
@@ -258,7 +242,9 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 var invocation = MutantPlacer.MemoizationInstrumentationEngine
                     .RetrieveMemoizationExpression(
                         memoizationIdentifier, lambdaExpr,
-                        UtilityFunctions.WrapInLambda(MutantPlacer.MemoizationInstrumentationEngine.AnyActiveMutantsCheck(mutantIds, context.Placer._injection)),
+                        UtilityFunctions.WrapInLambda(
+                            MutantPlacer.MemoizationInstrumentationEngine.AnyActiveMutantsCheck(mutantIds,
+                                context.Placer._injection)),
                         returnType, context.Placer._injection);
 
                 blockBody = Block(ReturnStatement(invocation.WithLeadingTrivia(Space)));

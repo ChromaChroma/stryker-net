@@ -93,6 +93,10 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
 
             // Injects: T ? = RetrieveMemo<T>(GenerateMemoizationId("1:10__NS.Method__x", Relevant_vars), () => { return expr })
             var variableId = CreateMemoizationVariableId(originalVdec, semanticModel);
+            if (variableId is null)
+            {
+                return vdec;
+            }
             var idExpression = engine.GenerateMemoId(variableId, idsAndMemberAccesses, injection);
             var lambdaExpr = WrapInLambda(rhsExprOriginal);
             var invocation =

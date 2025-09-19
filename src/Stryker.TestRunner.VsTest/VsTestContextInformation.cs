@@ -273,7 +273,7 @@ public sealed class VsTestContextInformation : IDisposable
         return
             $@"
 <MaxCpuCount>{Math.Max(0, maxCpu)}</MaxCpuCount>
-{frameworkConfig}{platformConfig}{testCaseFilter} 
+{frameworkConfig}{platformConfig}{testCaseFilter}
 <DisableAppDomain>true</DisableAppDomain>";
     }
 
@@ -284,21 +284,27 @@ public sealed class VsTestContextInformation : IDisposable
  </RunConfiguration>
 </RunSettings>";
 
-    public string GenerateRunSettings(int? timeout, bool forCoverage, Dictionary<int, ITestIdentifiers> mutantTestsMap,
+    public string GenerateRunSettings(int? timeout, bool forCoverage, bool trackMemoizationMetrics, Dictionary<int, ITestIdentifiers> mutantTestsMap,
         string helperNameSpace, string frameworkVersion = null, string platform = null)
     {
         var settingsForCoverage = string.Empty;
         var needDataCollector = forCoverage || mutantTestsMap is not null;
+
         var dataCollectorSettings = needDataCollector
-            ? CoverageCollector.GetVsTestSettings(
+            ? DataCollectorSettingsFactory.GetVsTestDataCollectorSettings(
                 forCoverage,
+                trackMemoizationMetrics, // Memoization Data Tracking
                 mutantTestsMap?.Select(e => (e.Key, e.Value.GetIdentifiers().Select(x => Guid.Parse(x)))),
-                helperNameSpace)
+                helperNameSpace,
+                new DataCollectorOptions{UseCoverageCollector = true, UseMemoizationDataCollection = true}
+            )
             : string.Empty;
+
         if (_testFramework.HasFlag(TestFrameworks.NUnit))
         {
             settingsForCoverage = "<CollectDataForEachTestSeparately>true</CollectDataForEachTestSeparately>";
         }
+
         if (_testFramework.HasFlag(TestFrameworks.xUnit) || _testFramework.HasFlag(TestFrameworks.MsTest))
         {
             settingsForCoverage += "<DisableParallelization>true</DisableParallelization>";
@@ -320,5 +326,4 @@ public sealed class VsTestContextInformation : IDisposable
 
         return runSettings;
     }
-
 }

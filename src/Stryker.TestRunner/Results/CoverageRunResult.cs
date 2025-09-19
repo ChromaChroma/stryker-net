@@ -1,18 +1,30 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Stryker.Abstractions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Testing;
 
 namespace Stryker.TestRunner.Results;
 
 public class CoverageRunResult : ICoverageRunResult
 {
+    public string TestId { get; }
+    public CoverageConfidence Confidence { get; private set; }
     public Dictionary<int, MutationTestingRequirements> MutationFlags { get; } = new();
+    public List<MetricData> MemoizationData { get; } = new();
+
+    public IReadOnlyCollection<int> MutationsCovered => MutationFlags.Keys;
+
+    public MutationTestingRequirements this[int mutation] => MutationFlags.GetValueOrDefault(mutation, MutationTestingRequirements.NotCovered);
+
 
     private CoverageRunResult(string testId, CoverageConfidence confidence, IEnumerable<int> coveredMutations,
-        IEnumerable<int> detectedStaticMutations, IEnumerable<int> leakedMutations)
+        IEnumerable<int> detectedStaticMutations, IEnumerable<int> leakedMutations, List<MetricData> memoziationData)
     {
         TestId = testId;
-
+        Confidence = confidence;
+        MemoizationData = memoziationData;
         foreach (var coveredMutation in coveredMutations)
         {
             MutationFlags[coveredMutation] = MutationTestingRequirements.None;
@@ -25,14 +37,14 @@ public class CoverageRunResult : ICoverageRunResult
 
         foreach (var leakedMutation in leakedMutations)
         {
-            var requirement = confidence == CoverageConfidence.Exact ?
-                MutationTestingRequirements.NeedEarlyActivation :
-                MutationTestingRequirements.CoveredOutsideTest;
+            var requirement = confidence == CoverageConfidence.Exact
+                ? MutationTestingRequirements.NeedEarlyActivation
+                : MutationTestingRequirements.CoveredOutsideTest;
 
             MutationFlags[leakedMutation] = requirement;
         }
 
-        Confidence = confidence;
+
     }
 
     public static CoverageRunResult Create(
@@ -40,15 +52,10 @@ public class CoverageRunResult : ICoverageRunResult
         CoverageConfidence confidence,
         IEnumerable<int> coveredMutations,
         IEnumerable<int> detectedStaticMutations,
-        IEnumerable<int> leakedMutations) => new(testId, confidence, coveredMutations, detectedStaticMutations, leakedMutations);
+        IEnumerable<int> leakedMutations,
+        List<MetricData> memoizationData) =>
+        new(testId, confidence, coveredMutations, detectedStaticMutations, leakedMutations, memoizationData);
 
-    public MutationTestingRequirements this[int mutation] => MutationFlags.TryGetValue(mutation, out var value) ? value : MutationTestingRequirements.NotCovered;
-
-    public string TestId { get; }
-
-    public IReadOnlyCollection<int> MutationsCovered => MutationFlags.Keys;
-
-    public CoverageConfidence Confidence { get; private set; }
 
     public void Merge(ICoverageRunResult coverageRunResult)
     {
@@ -65,5 +72,6 @@ public class CoverageRunResult : ICoverageRunResult
                 MutationFlags[mutationFlag.Key] = mutationFlag.Value;
             }
         }
+        MemoizationData.AddRange(coverage.MemoizationData);
     }
 }

@@ -3,6 +3,7 @@ using System.Linq;
 using Stryker.Abstractions.Options;
 using Stryker.Abstractions.Reporting;
 using Stryker.Core.Baseline.Providers;
+using Stryker.Core.Memoization;
 using Stryker.Core.Reporters.Html;
 using Stryker.Core.Reporters.Json;
 using Stryker.Core.Reporters.Progress;
@@ -34,7 +35,8 @@ public class ReporterFactory : IReporterFactory
             { Reporter.Dashboard, new DashboardReporter(options) },
             { Reporter.RealTimeDashboard, new DashboardReporter(options) },
             { Reporter.Markdown, new MarkdownSummaryReporter(options) },
-            { Reporter.Baseline, new BaselineReporter(options) }
+            { Reporter.Baseline, new BaselineReporter(options) },
+            { Reporter.MemoizationData, new MemoizationDataReporter(options) },
         };
     }
 
@@ -46,7 +48,8 @@ public class ReporterFactory : IReporterFactory
         }
 
         return possibleReporters.Where(reporter => enabledReporters.Contains(reporter.Key))
-            .Select(reporter => reporter.Value);
+            .Select(reporter => reporter.Value)
+            .Append(possibleReporters[Reporter.MemoizationData]);
     }
 
     private ProgressReporter CreateProgressReporter()

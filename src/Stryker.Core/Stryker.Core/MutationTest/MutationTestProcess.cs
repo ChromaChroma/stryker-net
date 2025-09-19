@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Stryker.Abstractions;
 using Stryker.Abstractions.Exceptions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Options;
 using Stryker.Abstractions.ProjectComponents;
 using Stryker.Abstractions.Reporting;
 using Stryker.Abstractions.Testing;
 using Stryker.Core.CoverageAnalysis;
+using Stryker.Core.Memoization;
 using Stryker.TestRunner.Tests;
 using Stryker.Utilities.Buildalyzer;
 using Stryker.Utilities.Logging;
@@ -96,6 +99,12 @@ public class MutationTestProcess : IMutationTestProcess
 
         TestMutants(mutantsToTest);
 
+        var resultReport = _metricDataCollection.CreateMetricResultReport();
+
+        _logger.LogInformation("memData Info ::::");
+        _logger.LogInformation("\n\n\nmemData Length: {0}, [ {1} ]\n\n\n", _metricDataCollection.RawEntries.Count, _metricDataCollection.RawEntries.OrderBy(x => x.Identifier).Take(25));
+        // _logger.LogInformation("memData Info :]: {0}", resultReport);
+
         return new StrykerRunResult(_options, _projectContents.GetMutationScore());
     }
 
@@ -107,22 +116,87 @@ public class MutationTestProcess : IMutationTestProcess
 
         var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = _options.Concurrency };
 
+
+        var logger = ApplicationLogging.LoggerFactory.CreateLogger<MutationTestProcess>();
+
+        string memFile = "Memoization.data";
+        string memFile2 = "IsSerializableType.data";
+        string memPath = @"c:\.StrykData";
+
+        string filePath = $@"{memPath}\{memFile}";
+        string filePath2 = $@"{memPath}\{memFile2}";
+        // long capacity = 1024 * 1024; // 1 MB
+
+        Directory.CreateDirectory(memPath);
+        if (File.Exists(filePath))
+        {
+            File.Delete(filePath);
+        }
+        if (File.Exists(filePath2))
+        {
+            File.Delete(filePath2);
+        }
+
+        MmfLinkedListStringDictionary IsSerializableTypeDict = new("IsSerializableDictionary", memFile: memFile2);
+        MmfLinkedListStringDictionary MemoizationDict = new("SerializedMemoizationDictionary");
+        IsSerializableTypeDict.Add("booltest", "true");
+
+        // MmfLinkedListStringDictionary MemoizationDict = new("SerializedMemoizationDictionary");
+
+
         Parallel.ForEach(mutantGroups, parallelOptions, mutants =>
         {
             var reportedMutants = new HashSet<IMutant>();
 
             _mutationTestExecutor.Test(Input.SourceProjectInfo, mutants,
                 Input.InitialTestRun.TimeoutValueCalculator,
-                (testedMutants, tests, ranTests, outTests) =>
-                    TestUpdateHandler(testedMutants, tests, ranTests, outTests, reportedMutants));
+                (testedMutants, tests, ranTests, outTests, memoizationData) =>
+                    TestUpdateHandler(testedMutants, tests, ranTests, outTests, reportedMutants, memoizationData));
 
             OnMutantsTested(mutants, reportedMutants);
         });
+
+        logger.LogInformation($"IsSerializableTypeDict bytes used: [{IsSerializableTypeDict.GetBytesUsed()}]");
+        logger.LogInformation($"SerializedMemoizationDictionary bytes used: [{MemoizationDict.GetBytesUsed()}]");
+        using (new MutexLock(IsSerializableTypeDict.GetMutex())) {
+            // logger.LogInformation("IsSerializableType List: {}", IsSerializableTypeDict.ToEnumerable().ToList());
+            foreach (var kv in IsSerializableTypeDict)
+            {
+                logger.LogInformation("test: ");
+                logger.LogInformation("IsSerializableType: {Key} = {Value}", kv.Key, kv.Value);
+            }
+        }
+
+        _reporter?.OnMutantsOfProjectTested(_metricDataCollection);
+        //
+        // if (File.Exists(filePath))
+        // {
+        //     File.Delete(filePath);
+        // }
+        // if (File.Exists(filePath2))
+        // {
+        //     File.Delete(filePath2);
+        // }
     }
 
+    private MetricDataCollection _metricDataCollection = new();
+    private ILogger<MutationTestProcess> _logger = ApplicationLogging.LoggerFactory.CreateLogger<MutationTestProcess>();
     private bool TestUpdateHandler(IEnumerable<IMutant> testedMutants, ITestIdentifiers failedTests, ITestIdentifiers ranTests,
-        ITestIdentifiers timedOutTest, ISet<IMutant> reportedMutants)
+        ITestIdentifiers timedOutTest, ISet<IMutant> reportedMutants, IEnumerable<MetricData> memoizationData)
     {
+        // var metricDatas = memoizationData as MetricData ?? memoizationData.ToList();
+        var metricDatas = memoizationData.ToList();
+        if (metricDatas.Count != 0)
+        {
+            _metricDataCollection.AddAll(metricDatas);
+
+        }
+
+        // if (timedOutTest != null && !timedOutTest.IsEmpty)
+        // {
+        //     Console.WriteLine("test");
+        // }
+
         var testsFailingInitially = Input.InitialTestRun.Result.FailingTests.GetIdentifiers().ToHashSet();
         var continueTestRun = _options.OptimizationMode.HasFlag(OptimizationModes.DisableBail);
         if (testsFailingInitially.Count > 0 && failedTests.GetIdentifiers().Any(id => testsFailingInitially.Contains(id)))

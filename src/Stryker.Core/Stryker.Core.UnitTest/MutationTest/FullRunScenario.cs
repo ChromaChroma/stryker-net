@@ -182,7 +182,7 @@ internal class FullRunScenario
                     result.Add(CoverageRunResult.Create(guid.ToString(), CoverageConfidence.Normal,
                         mutations,
                         Enumerable.Empty<int>(),
-                        Enumerable.Empty<int>()));
+                        Enumerable.Empty<int>(), []));
                 }
                 return result;
             });

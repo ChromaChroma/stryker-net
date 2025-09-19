@@ -2,15 +2,19 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using Stryker.Abstractions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Options;
 using Stryker.Abstractions.Testing;
+using Stryker.DataCollector;
 using Stryker.TestRunner.Results;
 using Stryker.TestRunner.Tests;
 using Stryker.Utilities.Logging;
@@ -57,13 +61,17 @@ public sealed class VsTestRunnerPool : ITestRunner
 
     public ITestSet GetTests(IProjectAndTests project) => Context.GetTestsForSources(project.GetTestAssemblies());
 
-    public ITestRunResult TestMultipleMutants(IProjectAndTests project, ITimeoutValueCalculator timeoutCalc, IReadOnlyList<IMutant> mutants, TestUpdateHandler update)
+    public ITestRunResult TestMultipleMutants(IProjectAndTests project, ITimeoutValueCalculator timeoutCalc,
+        IReadOnlyList<IMutant> mutants, TestUpdateHandler update)
         => RunThis(runner => runner.TestMultipleMutants(project, timeoutCalc, mutants, update));
 
     public ITestRunResult InitialTest(IProjectAndTests project)
         => RunThis(runner => runner.InitialTest(project));
 
-    public IEnumerable<ICoverageRunResult> CaptureCoverage(IProjectAndTests project) => Context.Options.OptimizationMode.HasFlag(OptimizationModes.CaptureCoveragePerTest) ? CaptureCoverageTestByTest(project) : CaptureCoverageInOneGo(project);
+    public IEnumerable<ICoverageRunResult> CaptureCoverage(IProjectAndTests project) =>
+        Context.Options.OptimizationMode.HasFlag(OptimizationModes.CaptureCoveragePerTest)
+            ? CaptureCoverageTestByTest(project)
+            : CaptureCoverageInOneGo(project);
 
     private void Initialize(Func<VsTestContextInformation, int, VsTestRunner> runnerBuilder = null)
     {
@@ -76,9 +84,12 @@ public sealed class VsTestRunnerPool : ITestRunner
             }));
     }
 
-    private IEnumerable<ICoverageRunResult> CaptureCoverageInOneGo(IProjectAndTests project) => ConvertCoverageResult(RunThis(runner => runner.RunCoverageSession(TestIdentifierList.EveryTest(), project).TestResults), false);
+    private IEnumerable<ICoverageRunResult> CaptureCoverageInOneGo(IProjectAndTests project)
+        => ConvertCoverageResult(
+            RunThis(runner => runner.RunCoverageSession(TestIdentifierList.EveryTest(), project).TestResults), false);
 
-    private IEnumerable<ICoverageRunResult> CaptureCoverageTestByTest(IProjectAndTests project) => ConvertCoverageResult(CaptureCoveragePerIsolatedTests(project, Context.VsTests.Keys).TestResults, true);
+    private IEnumerable<ICoverageRunResult> CaptureCoverageTestByTest(IProjectAndTests project) =>
+        ConvertCoverageResult(CaptureCoveragePerIsolatedTests(project, Context.VsTests.Keys).TestResults, true);
 
     private IRunResults CaptureCoveragePerIsolatedTests(IProjectAndTests project, IEnumerable<Guid> tests)
     {
@@ -87,7 +98,8 @@ public sealed class VsTestRunnerPool : ITestRunner
         var results = new ConcurrentBag<IRunResults>();
         Parallel.ForEach(tests, options,
             testCase =>
-                results.Add(RunThis(runner => runner.RunCoverageSession(new TestIdentifierList(testCase.ToString()), project))));
+                results.Add(RunThis(runner =>
+                    runner.RunCoverageSession(new TestIdentifierList(testCase.ToString()), project))));
 
         return results.Aggregate(result, (runResults, singleResult) => runResults.Merge(singleResult));
     }
@@ -117,10 +129,12 @@ public sealed class VsTestRunnerPool : ITestRunner
         {
             runner.Dispose();
         }
+
         _runnerAvailableHandler.Dispose();
     }
 
-    private IEnumerable<ICoverageRunResult> ConvertCoverageResult(IEnumerable<TestResult> testResults, bool perIsolatedTest)
+    private IEnumerable<ICoverageRunResult> ConvertCoverageResult(IEnumerable<TestResult> testResults,
+        bool perIsolatedTest)
     {
         var seenTestCases = new HashSet<Guid>();
         var defaultConfidence = perIsolatedTest ? CoverageConfidence.Exact : CoverageConfidence.Normal;
@@ -133,6 +147,7 @@ public sealed class VsTestRunnerPool : ITestRunner
                 // skip any test result that is not a pass or fail
                 continue;
             }
+
             if (ConvertSingleResult(testResult, seenTestCases, defaultConfidence,
                     out var coverageRunResult))
             {
@@ -154,10 +169,12 @@ public sealed class VsTestRunnerPool : ITestRunner
     private bool ConvertSingleResult(TestResult testResult, ISet<Guid> seenTestCases,
         CoverageConfidence defaultConfidence, out CoverageRunResult coverageRunResult)
     {
-        var (key, value) = testResult.GetProperties().FirstOrDefault(x => x.Key.Id == CoverageCollector.PropertyName);
+        var (key, value) = testResult.GetProperties()
+            .FirstOrDefault(x => x.Key.Id == CoverageCollector.PropertyName);
         var testCaseId = testResult.TestCase.Id;
         var unexpected = false;
-        var log = testResult.GetProperties().FirstOrDefault(x => x.Key.Id == CoverageCollector.CoverageLog).Value?.ToString();
+        var log = testResult.GetProperties().FirstOrDefault(x => x.Key.Id == CoverageCollector.CoverageLog).Value
+            ?.ToString();
         if (!string.IsNullOrEmpty(log))
         {
             _logger.LogDebug("VsTestRunner: Coverage collector log: {Log}.", log);
@@ -175,6 +192,33 @@ public sealed class VsTestRunnerPool : ITestRunner
 
         var testDescription = Context.VsTests[testCaseId];
 
+        // Todo restructure to have all null checks. and fit into the scoped code here.
+        var (mdcKey, mdcValue) = testResult.GetProperties()
+            .FirstOrDefault(x => x.Key.Id == MemoizationDataCollector.PropertyName);
+        var mdcRecordValue = mdcValue as string;
+
+        var memoizationDataList = string.IsNullOrWhiteSpace(mdcRecordValue)
+            ? []
+            : mdcRecordValue.TrimEnd(';').Split(';')
+                .Select(recordString =>
+                {
+                    var parts = recordString.Split('†');
+                    return new MetricData(
+                        parts[0],
+                        parts[1],
+                        bool.Parse(parts[2]),
+                        long.Parse(parts[3]),
+                        long.Parse(parts[4]),
+                        long.Parse(parts[5]),
+                        long.Parse(parts[6]),
+                        long.Parse(parts[7]),
+                        long.Parse(parts[8])
+                    );
+                    // string.IsNullOrEmpty(parts[0])
+                    //     ? Enumerable.Empty<int>()
+                    //     : parts[0].Split(',').Select(int.Parse);
+                }).ToList();
+
         // is this a suspect test ?
         if (key == null)
         {
@@ -182,7 +226,8 @@ public sealed class VsTestRunnerPool : ITestRunner
             {
                 // this is an extra result. Coverage data is already present in the already parsed result
                 _logger.LogDebug(
-                    "VsTestRunner: Extra result for test {TestCase}, so no coverage data for it.", testResult.TestCase.DisplayName);
+                    "VsTestRunner: Extra result for test {TestCase}, so no coverage data for it.",
+                    testResult.TestCase.DisplayName);
                 coverageRunResult = null;
                 return true;
             }
@@ -192,8 +237,11 @@ public sealed class VsTestRunnerPool : ITestRunner
             _logger.LogDebug("VsTestRunner: No coverage data for {TestCase}.", testResult.TestCase.DisplayName);
 
             seenTestCases.Add(Guid.Parse(testDescription.Id));
-            coverageRunResult = CoverageRunResult.Create(testDescription.Id.ToString(), CoverageConfidence.Dubious, [], [], []);
+            coverageRunResult = CoverageRunResult.Create(testDescription.Id.ToString(), CoverageConfidence.Dubious, [],
+                [],
+                [], memoizationDataList);
         }
+
         else
         {
             // we have coverage data
@@ -201,14 +249,15 @@ public sealed class VsTestRunnerPool : ITestRunner
             var propertyPairValue = value as string;
 
             coverageRunResult = BuildCoverageRunResultFromCoverageInfo(propertyPairValue, testResult, testCaseId,
-                unexpected ? CoverageConfidence.UnexpectedCase : defaultConfidence);
+                unexpected ? CoverageConfidence.UnexpectedCase : defaultConfidence, memoizationDataList);
         }
 
         return false;
     }
 
     private CoverageRunResult BuildCoverageRunResultFromCoverageInfo(string propertyPairValue, TestResult testResult,
-        Guid testCaseId, CoverageConfidence level)
+        Guid testCaseId, CoverageConfidence level,
+        List<MetricData> memoizationDataList)
     {
         IEnumerable<int> coveredMutants;
         IEnumerable<int> staticMutants;
@@ -217,7 +266,8 @@ public sealed class VsTestRunnerPool : ITestRunner
         if (string.IsNullOrWhiteSpace(propertyPairValue))
         {
             // do not attempt to parse empty strings
-            _logger.LogDebug("VsTestRunner: Test {TestCase} does not cover any mutation.", testResult.TestCase.DisplayName);
+            _logger.LogDebug("VsTestRunner: Test {TestCase} does not cover any mutation.",
+                testResult.TestCase.DisplayName);
             coveredMutants = Enumerable.Empty<int>();
             staticMutants = Enumerable.Empty<int>();
         }
@@ -245,13 +295,15 @@ public sealed class VsTestRunnerPool : ITestRunner
                 ? Enumerable.Empty<int>()
                 : propertyPairValue.Split(',').Select(int.Parse);
             _logger.LogDebug(
-                "VsTestRunner: Some mutations were executed outside any test (mutation ids: {MutationIds}).", propertyPairValue);
+                "VsTestRunner: Some mutations were executed outside any test (mutation ids: {MutationIds}).",
+                propertyPairValue);
         }
         else
         {
             leakedMutants = Enumerable.Empty<int>();
         }
 
-        return CoverageRunResult.Create(testCaseId.ToString(), level, coveredMutants, staticMutants, leakedMutants);
+        return CoverageRunResult.Create(testCaseId.ToString(), level, coveredMutants, staticMutants, leakedMutants,
+            memoizationDataList);
     }
 }
