@@ -152,6 +152,8 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
         if (expressionBody == null && blockBody == null)
         {
+            NotMemoizedCollector.Add(ReasonType.NoImplementation, MemoizationLevel.Method,
+                $"Method does not have an implementation. {sourceNode.Parent}", sourceNode);
             // no implementation provided
             return targetNode;
         }
@@ -167,10 +169,6 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         var inParams = parameters.Where(p => !p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword)))
             .ToList();
 
-        var methodReturnMemoizationId = sourceNode is BaseMethodDeclarationSyntax methodDeclarationSyntax
-            ? $"{sourceNode.SyntaxTree.GetLineSpan(sourceNode.Span).StartLinePosition}__" +
-              $"{MemoizationInstrumentationEngine.GetFullMethodSignature(methodDeclarationSyntax, semanticModel)}__RETURN"
-            : null;
 
         // no mutations to inject
         if (!context.HasLeftOverMutations)
@@ -194,60 +192,117 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 blockBody = MutantPlacer.AddEndingReturn(blockBody, returnType);
             }
 
+            var methodReturnMemoizationId = sourceNode is BaseMethodDeclarationSyntax methodDeclarationSyntax
+                ? $"{sourceNode.SyntaxTree.GetLineSpan(sourceNode.Span).StartLinePosition}__" +
+                  $"{MemoizationInstrumentationEngine.GetFullMethodSignature(methodDeclarationSyntax, semanticModel)}__RETURN"
+                : null;
 
-            // TODO Memoize out vars (IGNORE FOR NOW)
-            if (outParams is { Count: > 0 } || refParams is { Count: > 0 })
+
+            if (returnType.IsVoid())
             {
-                //todo
-                // If id.... set out params to its memoization value.
-                // Last instance of setting the out param, Save its value (var stmt like) in memoization
-
-                // out var en return val kunnen ook ene niet andere wel gememoized zijn.
+                NotMemoizedCollector.Add(ReasonType.VoidReturnType, MemoizationLevel.Method,
+                    "Void methods are not supported", sourceNode);
             }
-            // sourceNode.SyntaxTree.GetRoot().DescendantNodes().Select(n => )
-
-            if (refParams.Count > 0)
+            else if (sourceNode.DescendantNodes().OfType<YieldStatementSyntax>().Any())
             {
-                Console.Write("");
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+                    "Method has uses yield keyword", sourceNode);
             }
-
-            if (!returnType.IsVoid()
-                && !sourceNode.DescendantNodes().OfType<YieldStatementSyntax>().Any()
-                && outParams.Count == 0
-                && refParams.Count == 0
-                && methodReturnMemoizationId != null) //Assuming Stryker will not inject Yields
+            else if (outParams.Count > 0)
             {
-                // Input: (in)Params, other variables, code location+method.
-                var df = semanticModel.AnalyzeDataFlow(GetBodies(sourceNode).block).ReadInside;
-                var allParameters = inParams
-                    // .Where(p => semanticModel.GetTypeInfo(p).Type.)
-                    .Select(p => IdentifierName(p.Identifier.Text))
-                    .Cast<ExpressionSyntax>().ToArray();
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+                    "Method has uses out parameters", sourceNode);
+            }
+            else if (refParams.Count > 0)
+            {
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+                    "Method has uses ref parameters", sourceNode);
+            }
+            else if (methodReturnMemoizationId != null) //Assuming Stryker will not inject Yields
+            {
+                // Input: (in)Params, other variables,
+                // var dfWrittenOutside = semanticModel.AnalyzeDataFlow(GetBodies(sourceNode).block).WrittenOutside
+                //     .Where(n => n is ILocalSymbol).ToList();
 
-                if (!IsStatic(sourceNode))
+                var (blockBodyOriginal, expressionBodyOriginal) = GetBodies(sourceNode);
+                if (wasInExpressionForm)
                 {
-                    allParameters = allParameters.Append(ThisExpression()).ToArray();
+                    blockBodyOriginal = Block(ReturnStatement(expressionBodyOriginal.WithLeadingTrivia(Space)));
                 }
-                //Ignored vvoor nu, data in exact (method calls ook, niet te herkennen)
-                // df.Where(s => s.Name != "this" && s.Name != "value")
-                // .Select(s => IdentifierName(s.Name))
-                // .Concat( inParams.Select(p => IdentifierName(p.Identifier.Text)).ToArray());
+                var writtenExternalVariables = ExternalVariableUsageAnalyser.GetExternalWrites(blockBodyOriginal, semanticModel)
+                    .Where(s => s is not IParameterSymbol).ToList();
+                var sourceNodeContainingType = semanticModel.GetDeclaredSymbol(sourceNode)?.ContainingType;
+
+                var variablesRead = ExternalVariableUsageAnalyser.GetExternalFieldReads(blockBodyOriginal, semanticModel).ToList();
+
+                var thisVariablesRead = variablesRead.Where(s => s.ContainingType != null && SymbolEqualityComparer.Default.Equals(s.ContainingType, sourceNodeContainingType)).ToList();
+                var externalVariablesRead = variablesRead.Except(variablesRead).ToList();
+                // var thisVariablesRead = readExternalVariables.Where(s =>
+                //     s.ContainingType != null && SymbolEqualityComparer.Default.Equals(s.ContainingType, sourceNodeContainingType)).ToList();
+                // var dfReadOutside = semanticModel.AnalyzeDataFlow(GetBodies(sourceNode).block).ReadOutside
+                //     .Where(n => n is ILocalSymbol).ToList();
+
+                if (writtenExternalVariables.Any())
+                {
+                    NotMemoizedCollector.Add(ReasonType.AltersStateOutsideScope, MemoizationLevel.Method,
+                        "Alters state outside scope: " +string.Join(", ", writtenExternalVariables.Select(s => s.OriginalDefinition.ToString())),
+                        sourceNode);
+                }
+                else if(externalVariablesRead.Count > 0)
+                {
+                    NotMemoizedCollector.Add(ReasonType.ReliesOnExternalState, MemoizationLevel.Method,
+                        "Relies on external state: " +string.Join(", ", externalVariablesRead.Select(s => s.OriginalDefinition.ToString())),
+                        sourceNode);
+                }
+                else if(thisVariablesRead.Count > 0 && thisVariablesRead.All(s => !s.IsConst))
+                {
+                    //Todo, Allow Serializable non-const values, like primitives, strings, structs of those And serializable objects. (input params of key)
+                    // Compile time serilizability check
+
+                    NotMemoizedCollector.Add(ReasonType.ReliesOnThisState, MemoizationLevel.Method,
+                        "Relies on this state: " +string.Join(", ", thisVariablesRead.Select(s => s.OriginalDefinition.ToString())),
+                        sourceNode);
+                }
+                // else if (dfReadOutside.Any(n => n.ContainingType.TypeKind == TypeKind.Dynamic))
+                // {
+                //     NotMemoizedCollector.Add(ReasonType.Dynamic, MemoizationLevel.Method,
+                //         "Value type is dynamic type", sourceNode);
+                // }
+                else
+                {
+                    //todo Check if all or part of WrittenOutside is nonmimicable sideeffect
+
+                    var allParameters = inParams
+                        .Select(p => IdentifierName(p.Identifier.Text))
+                        .Cast<ExpressionSyntax>().ToArray();
+
+                    if (!IsStatic(sourceNode))
+                    {
+                        allParameters = allParameters.Append(ThisExpression()).ToArray();
+                    }
+                    //Ignored vvoor nu, data in exact (method calls ook, niet te herkennen)
+                    // df.Where(s => s.Name != "this" && s.Name != "value")
+                    // .Select(s => IdentifierName(s.Name))
+                    // .Concat( inParams.Select(p => IdentifierName(p.Identifier.Text)).ToArray());
 
 
-                //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
-                var memoizationIdentifier = MutantPlacer.MemoizationInstrumentationEngine
-                    .GenerateMemoId(methodReturnMemoizationId, allParameters, context.Placer._injection);
-                var lambdaExpr = UtilityFunctions.WrapInLambda(blockBody);
-                var mutantIds = targetNode.GetDescendantMutantIds().ToList();
-                var invocation = MutantPlacer.MemoizationInstrumentationEngine
-                    .RetrieveMemoizationExpression(
-                        memoizationIdentifier, lambdaExpr,
-                        UtilityFunctions.WrapInLambda(
-                            MutantPlacer.MemoizationInstrumentationEngine.AnyActiveMutantsCheck(mutantIds,
-                                context.Placer._injection)),
-                        returnType, context.Placer._injection);
+                    //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
+                    var memoizationIdentifier = MutantPlacer.MemoizationInstrumentationEngine
+                        .GenerateMemoId(methodReturnMemoizationId, allParameters, context.Placer._injection);
+                    var lambdaExpr = UtilityFunctions.WrapInLambda(blockBody);
+                    var mutantIds = targetNode.GetDescendantMutantIds().ToList();
+                    var invocation = MutantPlacer.MemoizationInstrumentationEngine
+                        .RetrieveMemoizationExpression(
+                            memoizationIdentifier, lambdaExpr,
+                            UtilityFunctions.WrapInLambda(
+                                MutantPlacer.MemoizationInstrumentationEngine.AnyActiveMutantsCheck(mutantIds,
+                                    context.Placer._injection)),
+                            returnType, context.Placer._injection);
 
-                blockBody = Block(ReturnStatement(invocation.WithLeadingTrivia(Space)));
+                    blockBody = Block(ReturnStatement(invocation.WithLeadingTrivia(Space)));
+                    NotMemoizedCollector.Add(ReasonType.None, MemoizationLevel.Method, "Memoization HAS been added",
+                        sourceNode);
+                }
             }
 
 

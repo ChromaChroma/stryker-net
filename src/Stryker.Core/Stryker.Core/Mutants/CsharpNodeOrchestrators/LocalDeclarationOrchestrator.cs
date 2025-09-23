@@ -3,6 +3,7 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Stryker.Core.Memoization;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 using static Stryker.Core.Memoization.UtilityFunctions;
 
@@ -35,6 +36,8 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             return targetNode;
         }
 
+        var sourceNodeContainingType = semanticModel.GetEnclosingSymbol(sourceNode.SpanStart)?.ContainingType;
+
         var engine = MutantPlacer.MemoizationInstrumentationEngine;
         var injection = context.Placer._injection;
         var declarators = vdsMutated.Variables.Select(vdec =>
@@ -55,13 +58,14 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 .Where(s => s switch
                 {
                     ILocalSymbol local => !local.IsImplicitlyDeclared,
-                    IParameterSymbol param => !(param.ContainingSymbol is IMethodSymbol method && method.MethodKind == MethodKind.AnonymousFunction),
+                    IParameterSymbol param => !(param.ContainingSymbol is IMethodSymbol method &&
+                                                method.MethodKind == MethodKind.AnonymousFunction),
                     IFieldSymbol or IPropertySymbol => true,
                     _ => false
                 })
                 .ToArray();
 
-            var hasRefTypes = analyzedIdentifiers.Any(s => s switch
+            var hasRefTypes = (analyzedIdentifiers ?? []).Any(s => s switch
             {
                 ILocalSymbol local => local.Type.IsRefLikeType,
                 IParameterSymbol param => param.Type.IsRefLikeType || param.RefKind == RefKind.RefReadOnly,
@@ -69,17 +73,56 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 _ => false,
             });
 
-            if (analyzedIdentifiers.Any(i => i.Name == "reader"))
-            {
-                Console.WriteLine((""));
-            }
+
             if (hasRefTypes)
             {
                 // Disallow ref types due to not being allowed in lambdas, return original
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Expression,
+                    "Expression has uses ref parameters", sourceNode);
                 return vdec;
             }
 
-            var identifiers = analyzedIdentifiers.Select(s => IdentifierName(s.Name));
+
+            var variablesRead = ExternalVariableUsageAnalyser
+                .GetExternalFieldReads(originalVdec.Initializer.Value, semanticModel).ToList();
+            var thisVariablesRead = variablesRead.Where(s =>
+                s.ContainingType != null &&
+                SymbolEqualityComparer.Default.Equals(s.ContainingType, sourceNodeContainingType)).ToList();
+            var externalVariablesRead = variablesRead.Except(variablesRead).ToList();
+
+            if (externalVariablesRead.Count > 0)
+            {
+                NotMemoizedCollector.Add(ReasonType.ReliesOnExternalState, MemoizationLevel.Expression,
+                    "Expression relies on external state: " + string.Join(", ",
+                        externalVariablesRead.Select(s => s.OriginalDefinition.ToString())), sourceNode);
+                return vdec;
+            }
+
+            if (thisVariablesRead.Count > 0 && thisVariablesRead.All(s => !s.IsConst))
+            {
+                //Todo, Allow Serializable non-const values, like primitives, strings, structs of those And serializable objects. (input params of key)
+                // Compile time serilizability check
+
+                NotMemoizedCollector.Add(ReasonType.ReliesOnThisState, MemoizationLevel.Expression,
+                    "Expression relies on this state: " + string.Join(", ",
+                        thisVariablesRead.Select(s => s.OriginalDefinition.ToString())),
+                    sourceNode);
+                return vdec;
+            }
+
+            var writtenExternalVariables = ExternalVariableUsageAnalyser
+                .GetExternalWrites(originalVdec.Initializer.Value, semanticModel)
+                .Where(s => s is not IParameterSymbol).ToList();
+
+            if (writtenExternalVariables.Count > 0)
+            {
+                NotMemoizedCollector.Add(ReasonType.AltersStateOutsideScope, MemoizationLevel.Expression,
+                    "Alters state outside scope: " + string.Join(", ",
+                        writtenExternalVariables.Select(s => s.OriginalDefinition.ToString())), sourceNode);
+                return vdec;
+            }
+
+            var identifiers = analyzedIdentifiers?.Select(s => IdentifierName(s.Name));
 
             //todo: Check how we can use vars from memeraccesses, and also return values from method calls.
             var idsAndMemberAccesses = identifiers.ToArray();
@@ -97,10 +140,20 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             {
                 return vdec;
             }
+
             var idExpression = engine.GenerateMemoId(variableId, idsAndMemberAccesses, injection);
             var lambdaExpr = WrapInLambda(rhsExprOriginal);
-            var invocation =
-                engine.RetrieveMemoizationExpression(idExpression, lambdaExpr, null, declaredType, injection);
+
+            var mutantIds = vdec.GetDescendantMutantIds().ToList();
+            var invocation = engine.RetrieveMemoizationExpression(
+                idExpression,
+                lambdaExpr,
+                UtilityFunctions.WrapInLambda(
+                    MutantPlacer.MemoizationInstrumentationEngine.AnyActiveMutantsCheck(mutantIds,
+                        context.Placer._injection)),
+                declaredType,
+                injection
+            );
             var newVdec = InjectStatementMemoization(vdec, invocation, targetNode, injection);
             return newVdec;
         });

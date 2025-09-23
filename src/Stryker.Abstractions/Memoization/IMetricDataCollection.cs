@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Stryker.Core.Memoization;
 
 namespace Stryker.Abstractions.Memoization;
 
@@ -47,4 +48,6 @@ public record MetricResultReport
     public double HitMissRatio { get; init; }
     public List<MemoizationInjectionStatistics> PerMemoizationStatistics { get; init; }
     public List<MetricData> RawEntries  { get; init; }
+
+    public List<NotMemoizedReason> NotMemoizedReasons { get; init; } = new List<NotMemoizedReason>();
 }
