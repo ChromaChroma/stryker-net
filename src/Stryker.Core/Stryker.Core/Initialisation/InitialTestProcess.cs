@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Stryker.Abstractions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Options;
 using Stryker.Abstractions.Testing;
 using Stryker.Utilities.Logging;
@@ -36,6 +37,7 @@ public class InitialTestProcess : IInitialTestProcess
         var initTestRunResult = testRunner.InitialTest(project);
         // Stop stopwatch immediately after test run
         stopwatch.Stop();
+        MemoizationTimingCollector.Add(stopwatch.ElapsedMilliseconds, "InitialTest");
 
         // timings
         _logger.LogDebug("Initial test run output: {ResultMessage}.", initTestRunResult.ResultMessage);

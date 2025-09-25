@@ -50,4 +50,5 @@ public record MetricResultReport
     public List<MetricData> RawEntries  { get; init; }
 
     public List<NotMemoizedReason> NotMemoizedReasons { get; init; } = new List<NotMemoizedReason>();
+    public List<MemoizationProcessTiming> MemoizationProcessTimings { get; init; } = new List<MemoizationProcessTiming>();
 }

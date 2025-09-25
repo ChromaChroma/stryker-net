@@ -51,7 +51,9 @@ public class AbstractMutatorTests : TestBase
     public void Mutator_ShouldNotCallApplyMutations_OnWrongType()
     {
         // the type ReturnStatementSyntax should NOT be mutated
-        var originalNode = SyntaxFactory.ReturnStatement(SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(1)));
+        var originalNode = SyntaxFactory.ReturnStatement(
+            SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(1)).WithLeadingTrivia(SyntaxFactory.Space)
+            );
 
         var target = new ExampleMutator(MutationLevel.Basic);
 

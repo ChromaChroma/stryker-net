@@ -14,6 +14,7 @@ using Stryker.CLI.CommandLineConfig;
 using Stryker.CLI.Logging;
 using Stryker.Configuration;
 using Stryker.Core;
+using Stryker.Core.Memoization;
 
 namespace Stryker.CLI;
 
@@ -150,7 +151,8 @@ public class StrykerCli
     private void RunStryker(IStrykerInputs inputs)
     {
         var logger = ApplicationLogging.LoggerFactory.CreateLogger<StrykerCli>();
-        logger.LogInformation("%%%%%% Initial test Log %%%%%%");
+
+        logger.LogInformation("%%% Stryker (with Memoization){0} %%%", inputs.CoverageAnalysisInput.SuppliedInput);
 
         var result = _stryker.RunMutationTest(inputs, ApplicationLogging.LoggerFactory);
 

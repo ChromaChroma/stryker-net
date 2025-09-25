@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -99,10 +100,10 @@ public class MutationTestProcess : IMutationTestProcess
 
         TestMutants(mutantsToTest);
 
-        var resultReport = _metricDataCollection.CreateMetricResultReport();
-
-        _logger.LogInformation("memData Info ::::");
-        _logger.LogInformation("\n\n\nmemData Length: {0}, [ {1} ]\n\n\n", _metricDataCollection.RawEntries.Count, _metricDataCollection.RawEntries.OrderBy(x => x.Identifier).Take(25));
+        // var resultReport = _metricDataCollection.CreateMetricResultReport();
+        var hits = _metricDataCollection.RawEntries.Count(e => e.IsMemoHit);
+        _logger.LogInformation("H {hits} / M {misses} [{ratio}]", hits, _metricDataCollection.RawEntries.Count-hits , _metricDataCollection.RawEntries.Count != 0 ? (double)hits / _metricDataCollection.RawEntries.Count : 0);
+        // _logger.LogInformation("\n\n\nmemData Length: {0}, [ {1} ]\n\n\n", _metricDataCollection.RawEntries.Count, _metricDataCollection.RawEntries.OrderBy(x => x.Identifier).Take(25));
         // _logger.LogInformation("memData Info :]: {0}", resultReport);
 
         return new StrykerRunResult(_options, _projectContents.GetMutationScore());
@@ -137,13 +138,14 @@ public class MutationTestProcess : IMutationTestProcess
             File.Delete(filePath2);
         }
 
-        MmfLinkedListStringDictionary IsSerializableTypeDict = new("IsSerializableDictionary", memFile: memFile2);
-        MmfLinkedListStringDictionary MemoizationDict = new("SerializedMemoizationDictionary");
-        IsSerializableTypeDict.Add("booltest", "true");
+        // MmfLinkedListStringDictionary IsSerializableTypeDict = new("IsSerializableDictionary", memFile: memFile2);
+        // MmfLinkedListStringDictionary MemoizationDict = new("SerializedMemoizationDictionary");
+        // IsSerializableTypeDict.Add("booltest", "true");
 
         // MmfLinkedListStringDictionary MemoizationDict = new("SerializedMemoizationDictionary");
 
-
+        var sw = new Stopwatch();
+        sw.Start();
         Parallel.ForEach(mutantGroups, parallelOptions, mutants =>
         {
             var reportedMutants = new HashSet<IMutant>();
@@ -155,17 +157,20 @@ public class MutationTestProcess : IMutationTestProcess
 
             OnMutantsTested(mutants, reportedMutants);
         });
+        sw.Stop();
+        MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "ParallelForEach::MutantGroups");
 
-        logger.LogInformation($"IsSerializableTypeDict bytes used: [{IsSerializableTypeDict.GetBytesUsed()}]");
-        logger.LogInformation($"SerializedMemoizationDictionary bytes used: [{MemoizationDict.GetBytesUsed()}]");
-        using (new MutexLock(IsSerializableTypeDict.GetMutex())) {
-            // logger.LogInformation("IsSerializableType List: {}", IsSerializableTypeDict.ToEnumerable().ToList());
-            foreach (var kv in IsSerializableTypeDict)
-            {
-                logger.LogInformation("test: ");
-                logger.LogInformation("IsSerializableType: {Key} = {Value}", kv.Key, kv.Value);
-            }
-        }
+        // logger.LogInformation($"IsSerializableTypeDict bytes used: [{IsSerializableTypeDict.GetBytesUsed()}]");
+        // logger.LogInformation($"SerializedMemoizationDictionary bytes used: [{MemoizationDict.GetBytesUsed()}]");
+
+        // using (new MutexLock(IsSerializableTypeDict.GetMutex())) {
+        //     // logger.LogInformation("IsSerializableType List: {}", IsSerializableTypeDict.ToEnumerable().ToList());
+        //     foreach (var kv in IsSerializableTypeDict)
+        //     {
+        //         logger.LogInformation("test: ");
+        //         logger.LogInformation("IsSerializableType: {Key} = {Value}", kv.Key, kv.Value);
+        //     }
+        // }
 
         _reporter?.OnMutantsOfProjectTested(_metricDataCollection);
         //

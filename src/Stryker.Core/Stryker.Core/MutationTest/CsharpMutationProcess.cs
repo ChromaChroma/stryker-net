@@ -63,18 +63,18 @@ public class CsharpMutationProcess : IMutationProcess
 
 
         var fileLeaves = projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().ToArray();
-        var tc = new TypeCollector(semanticModels);
-        tc.CollectTypes(fileLeaves.Select(l => l.SyntaxTree));
-        _logger.LogInformation($"tc.Types Length is :: {tc.Types.Count}");
-        foreach (var typeSymbol in tc.Types)
-        {
-            _logger.LogInformation($":: {typeSymbol.ToDisplayString()}");
-        }
-        _logger.LogInformation($"Error nodes length is:: {tc.ErrorTypeNodes.Count}");
-        foreach (var errorNodes in tc.ErrorTypeNodes)
-        {
-            _logger.LogInformation($":: {errorNodes}");
-        }
+        // var tc = new TypeCollector(semanticModels);
+        // tc.CollectTypes(fileLeaves.Select(l => l.SyntaxTree));
+        // _logger.LogInformation($"tc.Types Length is :: {tc.Types.Count}");
+        // foreach (var typeSymbol in tc.Types)
+        // {
+        //     _logger.LogInformation($":: {typeSymbol.ToDisplayString()}");
+        // }
+        // _logger.LogInformation($"Error nodes length is:: {tc.ErrorTypeNodes.Count}");
+        // foreach (var errorNodes in tc.ErrorTypeNodes)
+        // {
+        //     _logger.LogInformation($":: {errorNodes}");
+        // }
 
 
         // Mutate source files
@@ -91,9 +91,9 @@ public class CsharpMutationProcess : IMutationProcess
             // Mutate the syntax tree
             var mutatedSyntaxTree = orchestrator.Mutate(file.SyntaxTree, semanticModels.First(x => x.SyntaxTree == file.SyntaxTree));
 
-            //TODO remove when done with POC
-            _logger.LogInformation("Mutated {FullPath}:{NewLine}{MutatedSyntaxTree}",
-                file.FullPath, Environment.NewLine, mutatedSyntaxTree.GetText());
+            // //TODO remove when done with POC
+            // _logger.LogInformation("Mutated {FullPath}:{NewLine}{MutatedSyntaxTree}",
+            //     file.FullPath, Environment.NewLine, mutatedSyntaxTree.GetText());
 
             // Add the mutated syntax tree for compilation
             file.MutatedSyntaxTree = mutatedSyntaxTree;

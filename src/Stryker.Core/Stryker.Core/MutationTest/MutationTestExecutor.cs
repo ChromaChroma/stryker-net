@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Microsoft.Extensions.Logging;
 using Stryker.Abstractions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Testing;
 using Stryker.TestRunner.Results;
 using Stryker.Utilities.Logging;
@@ -93,9 +95,12 @@ public class MutationTestExecutor : IMutationTestExecutor
         ITimeoutValueCalculator timeoutMs,
         TestUpdateHandler updateHandler, bool forceSingle)
     {
+        var sw = new Stopwatch();
+
         Logger.LogTrace("Testing {MutantsToTest}.", string.Join(" ,", mutantsToTest.Select(x => x.DisplayName)));
         if (forceSingle)
         {
+            sw.Start();
             foreach (var mutant in mutantsToTest)
             {
                 var localResult =
@@ -108,11 +113,17 @@ public class MutationTestExecutor : IMutationTestExecutor
                         localResult.SessionTimedOut);
                 }
             }
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "TestRunner.TestMultipleMutants");
 
             return new TestRunResult(true);
         }
 
+        sw.Start();
         var result = TestRunner.TestMultipleMutants(projectAndTests, timeoutMs, mutantsToTest.ToList(), updateHandler);
+        sw.Stop();
+        MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "TestRunner.TestMultipleMutants");
+
         if (updateHandler != null && !result.SessionTimedOut)
         {
             return result;

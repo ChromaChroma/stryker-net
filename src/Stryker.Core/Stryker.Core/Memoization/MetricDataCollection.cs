@@ -86,6 +86,7 @@ public class MetricDataCollection : IMetricDataCollection
         return new MetricResultReport
         {
             TestRunId = testRunIdentifier,
+            MemoizationProcessTimings = MemoizationTimingCollector.Timings.ToList(),
             NotMemoizedReasons = NotMemoizedCollector.Reasons.ToList(),
             TotalMemoizationInjectionCalls = RawEntries.Count,
             TotalUniqueMemoizationInjectionCalls = _orderedMetricData.Count,

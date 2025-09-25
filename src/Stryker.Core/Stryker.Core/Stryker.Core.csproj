@@ -5,7 +5,7 @@
     <RootNamespace>Stryker.Core</RootNamespace>
     <OutputType>Library</OutputType>
   </PropertyGroup>
-  
+
   <PropertyGroup>
     <VersionPrefix>4.5.1</VersionPrefix>
     <VersionSuffix></VersionSuffix>
