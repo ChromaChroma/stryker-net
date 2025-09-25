@@ -9,7 +9,8 @@ public struct MetricData(
     long timeToTryGetValue,
     long timeToDeserialize,
     long timeToSerialize,
-    long timeToStore)
+    long timeToStore,
+    string memoValueNotEqualToComputedMessage)
 {
     public string Identifier { get; } = identifier;
     public string StringifiedArguments { get; } = stringifiedArguments;
@@ -20,5 +21,6 @@ public struct MetricData(
     public long TimeToDeserialize { get; } = timeToDeserialize;
     public long TimeToSerialize { get; } = timeToSerialize;
     public long TimeToStore { get; } = timeToStore;
+    public string MemoizedValueNotEqualToComputedMessage { get; } = memoValueNotEqualToComputedMessage;
     public override string ToString() => $"{Identifier},{StringifiedArguments},{IsMemoHit},{TimeTotal},{TimeToCheckSerializibility},{TimeToTryGetValue},{TimeToDeserialize},{TimeToSerialize},{TimeToStore} ";
 }

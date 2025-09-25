@@ -36,8 +36,8 @@ namespace Stryker.DataCollector
         public void SetLogger(Action<string> logger) => _logger = logger;
         public void Log(string message) => _logger?.Invoke(message);
 
-        public IList<(string, bool, long, long, long, long, long, long)>[] RetrieveMemoizationData() =>
-            (IList<(string, bool, long, long, long, long, long, long)>[])_getMemoizationData?.Invoke(null,
+        public IList<(string, bool, long, long, long, long, long, long, string)>[] RetrieveMemoizationData() =>
+            (IList<(string, bool, long, long, long, long, long, long, string)>[])_getMemoizationData?.Invoke(null,
                 new object[] { });
 
 
@@ -146,7 +146,7 @@ namespace Stryker.DataCollector
 
         private void PublishCoverageData(DataCollectionContext dataCollectionContext)
         {
-            IList<(string, bool, long, long, long, long, long, long)>[] memoizationData = RetrieveMemoizationData();
+            IList<(string, bool, long, long, long, long, long, long, string)>[] memoizationData = RetrieveMemoizationData();
             if (memoizationData == null)
             {
                 //TODO return empty version of the structure of data sent (e.g. ';' for empty 2 series of csv)
@@ -159,11 +159,11 @@ namespace Stryker.DataCollector
             foreach (var memoData in memoizationData[0])
             {
                 var (memoId, isHit, timeTotal, timeToCheckSerializibility, timeToTryGetValue, timeToDeserialize,
-                    timeToSerialize, timeToStore) = memoData;
-                sb.AppendFormat("{0}†{1}†{2}†{3}†{4}†{5}†{6}†{7};",
+                    timeToSerialize, timeToStore, memValueNotEqualToComputedMessage) = memoData;
+                sb.AppendFormat("{0}†{1}†{2}†{3}†{4}†{5}†{6}†{7}†{8};",
                     memoId, isHit, timeTotal, timeToCheckSerializibility, timeToTryGetValue, timeToDeserialize,
-                    timeToSerialize, timeToStore);
-                // sb.Append("tester†true†-1†-1†-1†-1†-1†-1†;");
+                    timeToSerialize, timeToStore, memValueNotEqualToComputedMessage);
+                // sb.Append("tester†true†-1†-1†-1†-1†-1†-1†msg;");
             }
             var stringData = sb.ToString();
             if (!string.IsNullOrEmpty(stringData))

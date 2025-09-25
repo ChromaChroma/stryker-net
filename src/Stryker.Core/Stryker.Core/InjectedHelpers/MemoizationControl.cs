@@ -1,5 +1,6 @@
 #define TRACK_STEPS
 
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -35,16 +36,16 @@ namespace Stryker
 
         public static bool CaptureMemoizationHitsAndMisses;
 
-        private static List<(string, bool, long, long, long, long, long, long)> _memoizationData = new()
+        private static List<(string, bool, long, long, long, long, long, long, string)> _memoizationData = new()
         {
             // ("SomeFunc(X, Y, Z)", true, 0.012345d),
             // ("SomeFuncOther(X, Y, Z)", false, -1.0d),
         };
 
         // Returns the logged memoiation measurement entries. Afterwards clears the list for future calls
-        public static IList<(string, bool, long, long, long, long, long, long)>[] GetMemoizationData()
+        public static IList<(string, bool, long, long, long, long, long, long, string)>[] GetMemoizationData()
         {
-            var result = new IList<(string, bool, long, long, long, long, long, long)>[] { _memoizationData };
+            var result = new IList<(string, bool, long, long, long, long, long, long, string)>[] { _memoizationData };
             ResetMemoizationInfo();
             return result;
         }
@@ -123,17 +124,52 @@ namespace Stryker
 
                     if (v != null)
                     {
-                        _memoizationData.Add((
-                            id,
-                            true,
-                            timeTotal,
-                            timeToCheckSerializibility,
-                            timeToTryGetValue,
-                            timeToDeserialize,
-                            timeToSerialize,
-                            timeToStore
-                        ));
-                        return v;
+
+                        T validationResult = func.Invoke();
+                        if (v.Equals(validationResult))
+                        {
+                            _memoizationData.Add((
+                                id,
+                                true,
+                                timeTotal,
+                                timeToCheckSerializibility,
+                                timeToTryGetValue,
+                                timeToDeserialize,
+                                timeToSerialize,
+                                timeToStore,
+                                ""
+                            ));
+                            return v;
+                        }
+                        else
+                        {
+                            _memoizationData.Add((
+                                id,
+                                true,
+                                timeTotal,
+                                timeToCheckSerializibility,
+                                timeToTryGetValue,
+                                timeToDeserialize,
+                                timeToSerialize,
+                                timeToStore,
+                                $"Memoized Value not same as expected Computed Value. Memoization might not be possible. Memoized value: {v}. Computed value: {validationResult}"
+
+                            ));
+                            // Memoization not same value as expected
+                            return validationResult;
+                        }
+
+                        // _memoizationData.Add((
+                        //     id,
+                        //     true,
+                        //     timeTotal,
+                        //     timeToCheckSerializibility,
+                        //     timeToTryGetValue,
+                        //     timeToDeserialize,
+                        //     timeToSerialize,
+                        //     timeToStore
+                        // ));
+                        // return v;
                     }
                     else
                     {
@@ -171,7 +207,8 @@ namespace Stryker
                 timeToTryGetValue,
                 timeToDeserialize,
                 timeToSerialize,
-                timeToStore
+                timeToStore,
+                ""
             ));
             return result;
 #else

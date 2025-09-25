@@ -146,7 +146,8 @@ public sealed class VsTestRunner : IDisposable
                                     long.Parse(parts[5]),
                                     long.Parse(parts[6]),
                                     long.Parse(parts[7]),
-                                    long.Parse(parts[8])
+                                    long.Parse(parts[8]),
+                                    parts[9]
                                 );
                             }).ToList();
                     // Todo restructure to have all null checks. and fit into the scoped code here.

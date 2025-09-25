@@ -212,7 +212,8 @@ public sealed class VsTestRunnerPool : ITestRunner
                         long.Parse(parts[5]),
                         long.Parse(parts[6]),
                         long.Parse(parts[7]),
-                        long.Parse(parts[8])
+                        long.Parse(parts[8]),
+                        parts[9]
                     );
                     // string.IsNullOrEmpty(parts[0])
                     //     ? Enumerable.Empty<int>()
