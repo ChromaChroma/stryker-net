@@ -95,50 +95,51 @@ public class MetricDataCollection : IMetricDataCollection
             TotalMisses = RawEntries.Count - totalHits,
             HitMissRatio = RawEntries.Count != 0 ? (double)totalHits / RawEntries.Count : 0,
             RawEntries = RawEntries.ToList(),
-            PerMemoizationStatistics = _orderedMetricData.Values.Where(list => list.Count != 0)
-                .Select(metricData =>
-                {
-                    var firstEntry = metricData.First();
-                    var totalhits = 0;
-                    long[] checkSerializabilityTimings = new long[metricData.Count],
-                        serilizationTimings = new long[metricData.Count],
-                        deserilizationTimings = new long[metricData.Count],
-                        retrievingTimings = new long[metricData.Count],
-                        storingTimings = new long[metricData.Count],
-                        totalMemoziationTimings = new long[metricData.Count];
-                    var metricDataArray = metricData.ToArray();
-                    for (var i = 0; i < metricDataArray.Length; i++)
-                    {
-                        var data = metricDataArray[i];
-                        if (data.IsMemoHit)
-                        {
-                            totalhits++;
-                        }
-
-                        checkSerializabilityTimings[i] = data.TimeToCheckSerializibility;
-                        serilizationTimings[i] = data.TimeToSerialize;
-                        deserilizationTimings[i] = data.TimeToDeserialize;
-                        retrievingTimings[i] = data.TimeToTryGetValue;
-                        storingTimings[i] = data.TimeToStore;
-                        totalMemoziationTimings[i] = data.TimeTotal;
-                    }
-
-                    return new MemoizationInjectionStatistics
-                    {
-                        MemoizationIdentiier = firstEntry.Identifier,
-                        TotalTimesCalled = metricData.Count,
-                        TotalHits = totalhits,
-                        TotalMisses = metricData.Count - totalhits,
-                        HitMissRatio = totalhits / metricData.Count,
-                        CheckSerializabilityStatistics = CreateTimingStats(checkSerializabilityTimings),
-                        SerializationStatistics = CreateTimingStats(serilizationTimings),
-                        DeserializationStatistics = CreateTimingStats(deserilizationTimings),
-                        RetrievingMemoizationStatistics = CreateTimingStats(retrievingTimings),
-                        StoringMemoizationStatistics = CreateTimingStats(storingTimings),
-                        TotalMemoizationStatistics = CreateTimingStats(totalMemoziationTimings)
-                    };
-                })
-                .ToList()
+            PerMemoizationStatistics = []
+            // _orderedMetricData.Values.Where(list => list.Count != 0)
+            //     .Select(metricData =>
+            //     {
+            //         var firstEntry = metricData.First();
+            //         var totalhits = 0;
+            //         long[] checkSerializabilityTimings = new long[metricData.Count],
+            //             serilizationTimings = new long[metricData.Count],
+            //             deserilizationTimings = new long[metricData.Count],
+            //             retrievingTimings = new long[metricData.Count],
+            //             storingTimings = new long[metricData.Count],
+            //             totalMemoziationTimings = new long[metricData.Count];
+            //         var metricDataArray = metricData.ToArray();
+            //         for (var i = 0; i < metricDataArray.Length; i++)
+            //         {
+            //             var data = metricDataArray[i];
+            //             if (data.IsMemoHit)
+            //             {
+            //                 totalhits++;
+            //             }
+            //
+            //             checkSerializabilityTimings[i] = data.TimeToCheckSerializibility;
+            //             serilizationTimings[i] = data.TimeToSerialize;
+            //             deserilizationTimings[i] = data.TimeToDeserialize;
+            //             retrievingTimings[i] = data.TimeToTryGetValue;
+            //             storingTimings[i] = data.TimeToStore;
+            //             totalMemoziationTimings[i] = data.TimeTotal;
+            //         }
+            //
+            //         return new MemoizationInjectionStatistics
+            //         {
+            //             MemoizationIdentiier = firstEntry.Identifier,
+            //             TotalTimesCalled = metricData.Count,
+            //             TotalHits = totalhits,
+            //             TotalMisses = metricData.Count - totalhits,
+            //             HitMissRatio = totalhits / metricData.Count,
+            //             CheckSerializabilityStatistics = CreateTimingStats(checkSerializabilityTimings),
+            //             SerializationStatistics = CreateTimingStats(serilizationTimings),
+            //             DeserializationStatistics = CreateTimingStats(deserilizationTimings),
+            //             RetrievingMemoizationStatistics = CreateTimingStats(retrievingTimings),
+            //             StoringMemoizationStatistics = CreateTimingStats(storingTimings),
+            //             TotalMemoizationStatistics = CreateTimingStats(totalMemoziationTimings)
+            //         };
+            //     })
+            //     .ToList()
         };
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -31,6 +32,7 @@ public class MemoizationDataReporter : IReporter
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+
     private readonly IStrykerOptions _options;
     private readonly IFileSystem _fileSystem;
     private readonly IAnsiConsole _console;
@@ -50,7 +52,6 @@ public class MemoizationDataReporter : IReporter
     {
         _metricDataCollections.Add(collector);
     }
-
 
 
     public void OnAllMutantsTested(IReadOnlyProjectComponent reportComponent, ITestProjectsInfo testProjectsInfo)
@@ -78,7 +79,6 @@ public class MemoizationDataReporter : IReporter
         {
             _console.WriteLine(reportUri, green);
         }
-
     }
 
     private List<MetricResultReport> BuildReport()
@@ -92,11 +92,71 @@ public class MemoizationDataReporter : IReporter
         var reportData = BuildReport();
 
         _fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+        // using var file = _fileSystem.File.Create(filePath);
+        // using var writer = new Utf8JsonWriter(file, new JsonWriterOptions { Indented = Options.WriteIndented });
+        // JsonSerializer.Serialize(writer, reportData, Options);
+
         using var file = _fileSystem.File.Create(filePath);
         using var writer = new Utf8JsonWriter(file, new JsonWriterOptions { Indented = Options.WriteIndented });
-        JsonSerializer.Serialize(writer, reportData, Options);
-    }
 
+        writer.WriteStartObject();
+        var data = reportData[0];
+
+        writer.WriteString("TestRunId", data.TestRunId);
+        writer.WriteNumber("MutationScore", data.MutationScore);
+        writer.WriteNumber("TotalMemoizationInjectionCalls", data.TotalMemoizationInjectionCalls);
+        writer.WriteNumber("TotalUniqueMemoizationInjectionCalls", data.TotalUniqueMemoizationInjectionCalls);
+        writer.WriteNumber("TotalHits", data.TotalHits);
+        writer.WriteNumber("TotalMisses", data.TotalMisses);
+        writer.WriteNumber("HitMissRatio", data.HitMissRatio);
+
+
+        // Stream the large collection
+        writer.WritePropertyName("RawEntries");
+        writer.WriteStartArray();
+
+        foreach (var entry in data.RawEntries)
+        {
+            JsonSerializer.Serialize(writer, entry, Options);
+            // Optional flush periodically to control memory use
+            if (writer.BytesPending > 10_000_000)
+            {
+                writer.Flush();
+            }
+        }
+
+        writer.WriteEndArray();
+
+
+        writer.WritePropertyName("NotMemoizedReasons");
+        writer.WriteStartArray();
+
+        foreach (var reason in data.NotMemoizedReasons)
+        {
+            writer.WriteStartObject();
+
+            writer.WriteString("Type", reason.Type.ToString());
+            writer.WriteString("MemoizationLevel", reason.MemoizationLevel.ToString());
+            writer.WriteString("Reason", reason.Reason);
+            if (!string.IsNullOrEmpty(reason.NodeCodeString))
+                writer.WriteString("NodeCodeString", reason.NodeCodeString);
+
+            writer.WriteEndObject();
+
+            // Optional: flush periodically for very large lists
+            if (writer.BytesPending > 10_000_000)
+                writer.Flush();
+        }
+
+        writer.WriteEndArray();
+
+
+        writer.WritePropertyName("MemoizationProcessTimings");
+        JsonSerializer.Serialize(writer, data.MemoizationProcessTimings, Options);
+
+        writer.WriteEndObject();
+        writer.Flush();
+    }
 
 
     public void OnMutantTested(IReadOnlyMutant result)
@@ -113,6 +173,4 @@ public class MemoizationDataReporter : IReporter
     {
         // Ignore
     }
-
-
 }
