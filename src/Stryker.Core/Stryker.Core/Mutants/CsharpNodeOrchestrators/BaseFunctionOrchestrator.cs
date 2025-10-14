@@ -296,12 +296,24 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                             thisVariablesRead.Select(s => s.OriginalDefinition.ToString())),
                         sourceNode);
                 }
-                else if (sourceNode.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any())
+                // else if (semanticModel.GetEnclosingSymbol(sourceNode.SpanStart)?.ContainingType.IsValueType ?? false)
+                // {
+                //     NotMemoizedCollector.Add(ReasonType.ParentIsValueType, MemoizationLevel.Method,
+                //         "Defined in value-typed parent, does not allow this access in lambdas",
+                //         sourceNode);
+                // }
+                else if (semanticModel.GetSymbolInfo(sourceNode).Symbol?.ContainingType is { IsValueType: true })
                 {
-                    NotMemoizedCollector.Add(ReasonType.StructParentType, MemoizationLevel.Method,
-                        "Defined in struct parent, does not allow this access in lambdas",
+                    NotMemoizedCollector.Add(ReasonType.ParentIsValueType, MemoizationLevel.Method,
+                        "Defined in value-typed parent, does not allow this access in lambdas",
                         sourceNode);
                 }
+                // else if (sourceNode.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any())
+                // {
+                //     NotMemoizedCollector.Add(ReasonType.ParentIsValueType, MemoizationLevel.Method,
+                //         "Defined in struct parent, does not allow this access in lambdas",
+                //         sourceNode);
+                // }
                 // else if (hasExternalInvocations.Any())
                 // {
                 //     if (hasExternalInvocations.Any(invocation =>

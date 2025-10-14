@@ -152,13 +152,21 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 return vdec;
             }
 
-            if (sourceNode.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any())
+            if (semanticModel.GetEnclosingSymbol(sourceNode.SpanStart)?.ContainingType.IsValueType ?? false)
             {
-                NotMemoizedCollector.Add(ReasonType.StructParentType, MemoizationLevel.Method,
-                    "Defined in struct parent, does not allow this access in lambdas",
+                NotMemoizedCollector.Add(ReasonType.ParentIsValueType, MemoizationLevel.Method,
+                    "Defined in value-typed parent, does not allow this access in lambdas",
                     sourceNode);
                 return vdec;
             }
+
+            // if (sourceNode.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any())
+            // {
+            //     NotMemoizedCollector.Add(ReasonType.ParentIsValueType, MemoizationLevel.Method,
+            //         "Defined in struct parent, does not allow this access in lambdas",
+            //         sourceNode);
+            //     // return vdec;
+            // }
 
             if (thisVariablesRead.Count > 0 && thisVariablesRead.All(s => !s.IsConst))
             {
