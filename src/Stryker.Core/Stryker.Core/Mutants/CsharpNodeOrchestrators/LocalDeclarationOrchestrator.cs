@@ -3,6 +3,7 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Stryker.Abstractions.Memoization;
 using Stryker.Core.Memoization;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 using static Stryker.Core.Memoization.UtilityFunctions;
@@ -28,10 +29,10 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             return targetNode;
         }
 
-        var declaredType = InferType(vds, semanticModel);
+        var (declaredType, isAsync) = InferType(vds, semanticModel);
 
         // If inferred type is var, we cannot perform memoization (Type needed)
-        if (declaredType.IsVar || declaredType.ToString() == "")
+        if (isAsync || declaredType.IsVar || declaredType.ToString() == "")
         {
             return targetNode;
         }
@@ -52,9 +53,62 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 return vdec;
             }
 
-            var analyzedIdentifiers = semanticModel.AnalyzeDataFlow(originalVdec.Initializer.Value)?
+            if (rhsExprOriginal.DescendantNodesAndSelf().OfType<SwitchExpressionSyntax>().Any())
+            {
+                NotMemoizedCollector.Add(ReasonType.SwitchExpressionInRightHandSide, MemoizationLevel.Expression,
+                    "Expression has Switch expression which is currently not handled in memoization implementation", sourceNode);
+                return vdec;
+
+            }
+
+            var hasAsync = rhsExprOriginal.DescendantNodesAndSelf()
+                               .OfType<AnonymousFunctionExpressionSyntax>()
+                               .Any(f => f.AsyncKeyword.IsKind(SyntaxKind.AsyncKeyword))
+                           || rhsExprOriginal.DescendantNodesAndSelf()
+                               .OfType<AnonymousMethodExpressionSyntax>()
+                               .Any(f => f.AsyncKeyword.IsKind(SyntaxKind.AsyncKeyword));
+            if (hasAsync)
+            {
+                NotMemoizedCollector.Add(ReasonType.UsesThreadingOrAsynchronousOperations, MemoizationLevel.Expression,
+                    "Expression ues await, and is async", sourceNode);
+                return vdec;
+            }
+
+            var awaitInvocations = rhsExprOriginal.DescendantNodesAndSelf().OfType<AwaitExpressionSyntax>();
+            if (awaitInvocations.Any())
+            {
+                NotMemoizedCollector.Add(ReasonType.UsesThreadingOrAsynchronousOperations, MemoizationLevel.Expression,
+                    "Expression has await calls", sourceNode);
+                return vdec;
+            }
+
+            var invocations = rhsExprOriginal.DescendantNodesAndSelf().OfType<InvocationExpressionSyntax>();
+            foreach (var inv in invocations)
+            {
+                var symbolInfo = semanticModel.GetSymbolInfo(inv).Symbol;
+
+
+                if (symbolInfo is IMethodSymbol { IsAsync: true })
+                {
+                    NotMemoizedCollector.Add(ReasonType.UsesThreadingOrAsynchronousOperations, MemoizationLevel.Expression,
+                        $"Expression has async calls: {inv.ToString()}", sourceNode);
+                    return vdec;
+                }
+
+                if (IsExternalInvocation(inv, semanticModel))
+                {
+                    NotMemoizedCollector.Add(ReasonType.UsesExternalLibrariesOrAPIs, MemoizationLevel.Expression,
+                        "Uses external api calls that cannot be confirmed to be side-effect free: " + inv.ToString(),
+                        sourceNode);
+                }
+            }
+
+            var dataFlow = semanticModel.AnalyzeDataFlow(originalVdec.Initializer.Value);
+            // var declaredInRhs = dataFlow?.VariablesDeclared ?? Enumerable.Empty<ISymbol>();
+            var analyzedIdentifiers = dataFlow?
                 .ReadInside
                 .Where(s => s.Name != "this" && s.Name != "value")
+                .Where(s => !dataFlow.VariablesDeclared.Contains(s))
                 .Where(s => s switch
                 {
                     ILocalSymbol local => !local.IsImplicitlyDeclared,
@@ -95,6 +149,14 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 NotMemoizedCollector.Add(ReasonType.ReliesOnExternalState, MemoizationLevel.Expression,
                     "Expression relies on external state: " + string.Join(", ",
                         externalVariablesRead.Select(s => s.OriginalDefinition.ToString())), sourceNode);
+                return vdec;
+            }
+
+            if (sourceNode.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any())
+            {
+                NotMemoizedCollector.Add(ReasonType.StructParentType, MemoizationLevel.Method,
+                    "Defined in struct parent, does not allow this access in lambdas",
+                    sourceNode);
                 return vdec;
             }
 

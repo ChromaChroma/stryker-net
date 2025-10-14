@@ -21,9 +21,16 @@ public class CsharpFileLeaf : ProjectComponent<SyntaxTree>, IFileLeaf<SyntaxTree
 
     public override IEnumerable<IMutant> Mutants { get; set; }
 
-    public override IEnumerable<SyntaxTree> CompilationSyntaxTrees => MutatedSyntaxTrees;
+    public override IEnumerable<SyntaxTree> CompilationSyntaxTrees
+    {
+        get => MutatedSyntaxTrees;
+        set => throw new System.NotImplementedException();
+    }
 
-    public override IEnumerable<SyntaxTree> MutatedSyntaxTrees => new List<SyntaxTree> { MutatedSyntaxTree };
+    public override IEnumerable<SyntaxTree> MutatedSyntaxTrees
+    {
+        get => new List<SyntaxTree> { MutatedSyntaxTree };
+    }
 
     public override IEnumerable<IFileLeaf<SyntaxTree>> GetAllFiles()
     {

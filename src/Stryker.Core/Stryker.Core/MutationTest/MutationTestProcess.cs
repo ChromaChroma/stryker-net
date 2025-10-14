@@ -163,25 +163,7 @@ public class MutationTestProcess : IMutationTestProcess
         // logger.LogInformation($"IsSerializableTypeDict bytes used: [{IsSerializableTypeDict.GetBytesUsed()}]");
         // logger.LogInformation($"SerializedMemoizationDictionary bytes used: [{MemoizationDict.GetBytesUsed()}]");
 
-        // using (new MutexLock(IsSerializableTypeDict.GetMutex())) {
-        //     // logger.LogInformation("IsSerializableType List: {}", IsSerializableTypeDict.ToEnumerable().ToList());
-        //     foreach (var kv in IsSerializableTypeDict)
-        //     {
-        //         logger.LogInformation("test: ");
-        //         logger.LogInformation("IsSerializableType: {Key} = {Value}", kv.Key, kv.Value);
-        //     }
-        // }
-
         _reporter?.OnMutantsOfProjectTested(_metricDataCollection);
-        //
-        // if (File.Exists(filePath))
-        // {
-        //     File.Delete(filePath);
-        // }
-        // if (File.Exists(filePath2))
-        // {
-        //     File.Delete(filePath2);
-        // }
     }
 
     private MetricDataCollection _metricDataCollection = new();

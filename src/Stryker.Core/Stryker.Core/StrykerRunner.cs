@@ -100,7 +100,7 @@ public class StrykerRunner : IStrykerRunner
             // Report
             reporters.OnMutantsCreated(rootComponent, combinedTestProjectsInfo);
             sw.Stop();
-            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "FilterMutants");
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "OnMutantsCreated");
 
             var allMutants = rootComponent.Mutants.ToList();
             var mutantsNotRun = rootComponent.NotRunMutants().ToList();
@@ -124,6 +124,8 @@ public class StrykerRunner : IStrykerRunner
                     _logger.LogWarning("It\'s a mutant-free world, nothing to test.");
                 }
 
+                MemoizationTimingCollector.MutationScore = rootComponent.GetMutationScore();
+
                 sw.Restart();
                 reporters.OnAllMutantsTested(rootComponent, combinedTestProjectsInfo);
                 sw.Stop();
@@ -132,7 +134,10 @@ public class StrykerRunner : IStrykerRunner
                 {
                     projectOrchestrator.Dispose();
                 }
-                return new StrykerRunResult(options, rootComponent.GetMutationScore());
+
+                var resInner = new StrykerRunResult(options, rootComponent.GetMutationScore());
+                MemoizationTimingCollector.MutationScore = resInner.MutationScore;
+                return resInner;
             }
             sw.Restart();
             // Report
@@ -159,12 +164,16 @@ public class StrykerRunner : IStrykerRunner
                 project.Restore();
             }
 
+            MemoizationTimingCollector.MutationScore = rootComponent.GetMutationScore();
+
             sw.Restart();
             reporters.OnAllMutantsTested(rootComponent, combinedTestProjectsInfo);
             sw.Stop();
             MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "OnAllMutantsTested");
 
-            return new StrykerRunResult(options, rootComponent.GetMutationScore());
+            var res = new StrykerRunResult(options, rootComponent.GetMutationScore());
+            MemoizationTimingCollector.MutationScore = res.MutationScore;
+            return res;
         }
 #if !DEBUG
         catch (Exception ex) when (!(ex is InputException))

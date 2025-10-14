@@ -177,6 +177,14 @@ public class MutantPlacer
                 return annotatedNode == nodeToRemove ? restoredNode : nodeToRemove.ReplaceNode(annotatedNode, restoredNode);
             }
         }
+
+        if (nodeToRemove.HasAnnotations("ExplicitUsingsMemoization"))
+        {
+            return SyntaxFactory.UsingDirective(
+                SyntaxFactory.ParseName("Microsoft.VisualBasic").WithLeadingTrivia(SyntaxFactory.Space)
+            ).WithTrailingTrivia(SyntaxFactory.Space);
+        }
+
         throw new InvalidOperationException($"Unable to find an engine to remove injection from this node: '{nodeToRemove}'");
     }
 

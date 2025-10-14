@@ -150,7 +150,7 @@ namespace Stryker.DataCollector
             if (memoizationData == null)
             {
                 //TODO return empty version of the structure of data sent (e.g. ';' for empty 2 series of csv)
-                _dataSink.SendData(dataCollectionContext, PropertyName, ";");
+                _dataSink.SendData(dataCollectionContext, PropertyName, "⹋");
                 // _dataSink.SendData(dataCollectionContext, MemoizationLog,$"Test {dataCollectionContext.TestCase.DisplayName} ended. No memoization data found.");
                 return;
             }
@@ -160,10 +160,10 @@ namespace Stryker.DataCollector
             {
                 var (memoId, isHit, timeTotal, timeToCheckSerializibility, timeToTryGetValue, timeToDeserialize,
                     timeToSerialize, timeToStore, memValueNotEqualToComputedMessage) = memoData;
-                sb.AppendFormat("{0}†{1}†{2}†{3}†{4}†{5}†{6}†{7}†{8};",
+                sb.AppendFormat("{0}†{1}†{2}†{3}†{4}†{5}†{6}†{7}†{8}⹋",
                     memoId, isHit, timeTotal, timeToCheckSerializibility, timeToTryGetValue, timeToDeserialize,
                     timeToSerialize, timeToStore, memValueNotEqualToComputedMessage);
-                // sb.Append("tester†true†-1†-1†-1†-1†-1†-1†msg;");
+                // sb.Append("tester†true†-1†-1†-1†-1†-1†-1†msg⹋");
             }
             var stringData = sb.ToString();
             if (!string.IsNullOrEmpty(stringData))

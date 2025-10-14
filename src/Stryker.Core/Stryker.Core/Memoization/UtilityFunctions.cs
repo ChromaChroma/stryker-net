@@ -10,9 +10,25 @@ namespace Stryker.Core.Memoization;
 
 public class UtilityFunctions
 {
+
+
+    public static bool IsExternalInvocation(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
+    {
+        var symbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+        if (symbol == null)
+            return false; // couldn’t resolve — treat as not external (or decide your policy)
+
+        // If there are no syntax references, this method comes from metadata
+        return symbol.DeclaringSyntaxReferences.Length == 0;
+    }
+
+
+
+
+
     // Infers the type of a variable declaration if possible.
     // Returns type if predefined type, returns var if type cannot be inferred from project's semantic model.
-    public static TypeSyntax InferType(VariableDeclarationSyntax vds, SemanticModel semanticModel)
+    public static (TypeSyntax?, bool) InferType(VariableDeclarationSyntax vds, SemanticModel semanticModel)
     {
         if (vds.Type.IsVar)
         {
@@ -21,13 +37,34 @@ public class UtilityFunctions
                 .FirstOrDefault(v => v is not null);
             if (variableValue != null)
             {
-                return ParseTypeName(
-                    ModelExtensions.GetTypeInfo(semanticModel, variableValue).Type!.ToDisplayString(SymbolDisplayFormat
-                        .FullyQualifiedFormat));
+                if (variableValue.DescendantNodesAndSelf().OfType<AwaitExpressionSyntax>().Any())
+                {
+                    return (null, true);
+                }
+
+                var containsTaskOrValueTasks = variableValue
+                    .DescendantNodesAndSelf()
+                    .OfType<InvocationExpressionSyntax>()
+                    .Any(inv => semanticModel.GetTypeInfo(inv).Type?.Name is "Task" or "ValueTask");
+                if (containsTaskOrValueTasks)
+                {
+                    return (null, true);
+                }
+
+                return (ParseTypeName(
+                        ModelExtensions.GetTypeInfo(semanticModel, variableValue).Type!.ToDisplayString(
+                            SymbolDisplayFormat.FullyQualifiedFormat)),
+                    false);
+
             }
         }
 
-        return vds.Type;
+        if (vds.Type is IdentifierNameSyntax { Identifier.ValueText: "Task" or "ValueTask" } or GenericNameSyntax { Identifier.ValueText: "Task" or "ValueTask" })
+        {
+            return (null, true);
+        }
+
+        return (vds.Type, false);
     }
 
     public static string CreateMemoizationVariableId(VariableDeclaratorSyntax vds, SemanticModel semanticModel)

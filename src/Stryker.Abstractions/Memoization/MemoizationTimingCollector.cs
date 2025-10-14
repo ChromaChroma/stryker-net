@@ -16,7 +16,7 @@ public struct MemoizationProcessTiming
 }
 public class MemoizationTimingCollector
 {
-    public Stopwatch Stopwatch { get; set; } = new();
+    public static double MutationScore { get; set; }
     public static readonly ConcurrentBag<MemoizationProcessTiming> Timings = new();
     public static void Add(double time, string location)
         => Timings.Add(new MemoizationProcessTiming(time, location));

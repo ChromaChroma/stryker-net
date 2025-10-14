@@ -80,7 +80,7 @@ public abstract class ProjectComponent<T> : ProjectComponent
     /// <summary>
     /// All syntax trees that should be a part of the compilation
     /// </summary>
-    public abstract IEnumerable<T> CompilationSyntaxTrees { get; }
+    public abstract IEnumerable<T> CompilationSyntaxTrees { get; set; }
     /// <summary>
     /// Only those syntax trees that were changed by the mutation process
     /// </summary>

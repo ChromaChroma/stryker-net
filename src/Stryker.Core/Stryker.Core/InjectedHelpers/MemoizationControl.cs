@@ -7,12 +7,17 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
+using System.Threading;
+
+#if NETFRAMEWORK
+using Newtonsoft.Json;
+#elif NETCOREAPP3_0_OR_GREATER
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
+#endif
 
 namespace Stryker
 {
@@ -23,11 +28,20 @@ namespace Stryker
         private static readonly MmfLinkedListStringDictionary MemoizationDict = new("SerializedMemoizationDictionary");
 
 
-        private static readonly Dictionary< string, string> IsSerializableTypeDict2 = new();
-        private static readonly Dictionary< string, string> MemoizationDict2 = new();
+        private static readonly System.Collections.Generic.Dictionary<string, string> IsSerializableTypeDict2 = new();
+        private static readonly System.Collections.Generic.Dictionary<string, string> MemoizationDict2 = new();
 
+#if NETFRAMEWORK
+     private static readonly JsonSerializerSettings Settings = new()
+        {
+            Formatting = Formatting.Indented,
+            Converters = { new AllFieldsConverter() } // custom converter
+        };
+#elif NETCOREAPP3_0_OR_GREATER
         private static readonly JsonSerializerOptions Options =
             new() { WriteIndented = true, Converters = { new AllFieldsConverterFactory() } };
+#endif
+
 
         // this attribute will be set by the Stryker Data Collector before each test
         public static bool CaptureCoverage;
@@ -36,16 +50,22 @@ namespace Stryker
 
         public static bool CaptureMemoizationHitsAndMisses;
 
-        private static List<(string, bool, long, long, long, long, long, long, string)> _memoizationData = new()
-        {
-            // ("SomeFunc(X, Y, Z)", true, 0.012345d),
-            // ("SomeFuncOther(X, Y, Z)", false, -1.0d),
-        };
+        private static System.Collections.Generic.List<(string, bool, long, long, long, long, long, long, string)>
+            _memoizationData = new()
+            {
+                // ("SomeFunc(X, Y, Z)", true, 0.012345d),
+                // ("SomeFuncOther(X, Y, Z)", false, -1.0d),
+            };
 
         // Returns the logged memoiation measurement entries. Afterwards clears the list for future calls
-        public static IList<(string, bool, long, long, long, long, long, long, string)>[] GetMemoizationData()
+        public static System.Collections.Generic.IList<(string, bool, long, long, long, long, long, long, string)>[]
+            GetMemoizationData()
         {
-            var result = new IList<(string, bool, long, long, long, long, long, long, string)>[] { _memoizationData };
+            var result =
+                new System.Collections.Generic.IList<(string, bool, long, long, long, long, long, long, string)>[]
+                {
+                    _memoizationData
+                };
             ResetMemoizationInfo();
             return result;
         }
@@ -74,12 +94,12 @@ namespace Stryker
             //     Thread.Sleep(100);
             // }
             // Debugger.Break();
-
         }
 
         // check with: Stryker.MemoizationControl.RetrieveMemoization<T>(ID, FUNC, PRED)
         public static T RetrieveMemoization<T>(string id, Func<T> func, Func<bool> predicate = null)
         {
+            // return func();
             // If mutant active predicate is true, compute original code, do not memoize
             if (predicate != null && predicate())
             {
@@ -87,146 +107,173 @@ namespace Stryker
             }
 
 #if TRACK_STEPS
-            long timeTotal = 0,
-                timeToCheckSerializibility = -1,
-                timeToTryGetValue = -1,
-                timeToDeserialize = -1,
-                timeToSerialize = -1,
-                timeToStore = -1;
-
-            var sw = new Stopwatch();
-
-            sw.Start();
-            var serializabilityStored =
-                IsSerializableTypeDict.TryGetValue(typeof(T).FullName, out string isSerializable);
-            var typeIsSerializable = serializabilityStored &&  bool.Parse(isSerializable);
-
-
-            sw.Stop();
-            timeToCheckSerializibility = sw.ElapsedTicks;
-            timeTotal += timeToCheckSerializibility;
-
-            if (typeIsSerializable)
+            try
             {
-                sw.Restart();
-                bool foundValue = MemoizationDict.TryGetValue(id, out var value);
-                sw.Stop();
-                timeToTryGetValue = sw.ElapsedTicks;
-                timeTotal += timeToTryGetValue;
+                long timeTotal = 0,
+                    timeToCheckSerializibility = -1,
+                    timeToTryGetValue = -1,
+                    timeToDeserialize = -1,
+                    timeToSerialize = -1,
+                    timeToStore = -1;
 
-                if (foundValue)
+                var sw = new Stopwatch();
+
+                sw.Start();
+                var serializabilityStored = IsSerializableTypeDict
+                    .TryGetValue(typeof(T).FullName, out string isSerializable);
+                var typeIsSerializable = !(typeof(T).IsInterface || typeof(T).IsAbstract) && serializabilityStored &&
+                                         bool.Parse(isSerializable);
+
+
+                sw.Stop();
+                timeToCheckSerializibility = sw.ElapsedTicks;
+                timeTotal += timeToCheckSerializibility;
+
+                if (typeIsSerializable)
                 {
                     sw.Restart();
-                    T? v = JsonSerializer.Deserialize<T>(value, Options);
+                    bool foundValue = MemoizationDict.TryGetValue(id, out var value);
                     sw.Stop();
-                    timeToDeserialize = sw.ElapsedTicks;
-                    timeTotal += timeToDeserialize;
+                    timeToTryGetValue = sw.ElapsedTicks;
+                    timeTotal += timeToTryGetValue;
 
-                    if (v != null)
+                    if (foundValue)
                     {
+                        sw.Restart();
+                        T? v = DoDeserialize<T>(value);
+                        sw.Stop();
+                        timeToDeserialize = sw.ElapsedTicks;
+                        timeTotal += timeToDeserialize;
 
-                        T validationResult = func.Invoke();
-                        if (v.Equals(validationResult))
+                        if (v != null)
                         {
-                            _memoizationData.Add((
-                                id,
-                                true,
-                                timeTotal,
-                                timeToCheckSerializibility,
-                                timeToTryGetValue,
-                                timeToDeserialize,
-                                timeToSerialize,
-                                timeToStore,
-                                ""
-                            ));
-                            return v;
+                            T validationResult = func.Invoke();
+
+
+                            // var isInterface = typeof(T).IsInterface || typeof(T).IsAbstract;
+                            var isIEnumerable =
+                                typeof(T).GetInterfaces()
+                                    .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+                            if ((isIEnumerable && ((IEnumerable<T>)v).SequenceEqual((IEnumerable<T>)validationResult))
+                                || v.Equals(validationResult))
+                            {
+                                _memoizationData.Add((
+                                    id,
+                                    true,
+                                    timeTotal,
+                                    timeToCheckSerializibility,
+                                    timeToTryGetValue,
+                                    timeToDeserialize,
+                                    timeToSerialize,
+                                    timeToStore,
+                                    ""
+                                ));
+                                return v;
+                            }
+                            //
+                            // if (v.Equals(validationResult))
+                            // {
+                            //     _memoizationData.Add((
+                            //         id,
+                            //         true,
+                            //         timeTotal,
+                            //         timeToCheckSerializibility,
+                            //         timeToTryGetValue,
+                            //         timeToDeserialize,
+                            //         timeToSerialize,
+                            //         timeToStore,
+                            //         ""
+                            //     ));
+                            //     return v;
+                            // }
+                            else
+                            {
+                                _memoizationData.Add((
+                                    id,
+                                    true,
+                                    timeTotal,
+                                    timeToCheckSerializibility,
+                                    timeToTryGetValue,
+                                    timeToDeserialize,
+                                    timeToSerialize,
+                                    timeToStore,
+                                    $"Memoized Value not same as expected Computed Value. Memoization might not be possible. Memoized value: {v}. Computed value: {validationResult}"
+                                ));
+                                // Memoization not same value as expected
+                                return validationResult;
+                            }
                         }
                         else
                         {
-                            _memoizationData.Add((
-                                id,
-                                true,
-                                timeTotal,
-                                timeToCheckSerializibility,
-                                timeToTryGetValue,
-                                timeToDeserialize,
-                                timeToSerialize,
-                                timeToStore,
-                                $"Memoized Value not same as expected Computed Value. Memoization might not be possible. Memoized value: {v}. Computed value: {validationResult}"
-
-                            ));
-                            // Memoization not same value as expected
-                            return validationResult;
+                            // Catch possible multiple invoke and insets below if false ^
                         }
-
-                        // _memoizationData.Add((
-                        //     id,
-                        //     true,
-                        //     timeTotal,
-                        //     timeToCheckSerializibility,
-                        //     timeToTryGetValue,
-                        //     timeToDeserialize,
-                        //     timeToSerialize,
-                        //     timeToStore
-                        // ));
-                        // return v;
-                    }
-                    else
-                    {
-                        // Catch possible multiple invoke and insets below if false ^
                     }
                 }
-            }
 
-            T result = func.Invoke();
-            // Assuming null is valid result, no assumption of invocated logic.
-            // then check if type is serializable (but maybe not in memoization). If not yet checked, Check if serializable
-            if (result == null || !serializabilityStored || typeIsSerializable)
-            {
-                sw.Restart();
-                var isSuccessfull = TrySerialize(result, out string serializedJson);
-                sw.Stop();
-                timeToSerialize = sw.ElapsedTicks;
-                timeTotal += timeToSerialize;
-
-                if (isSuccessfull)
+                T result = func.Invoke();
+                // Assuming null is valid result, no assumption of invocated logic.
+                // then check if type is serializable (but maybe not in memoization). If not yet checked, Check if serializable
+                if (result == null || !serializabilityStored || typeIsSerializable)
                 {
                     sw.Restart();
-                    MemoizationDict.Add(id, serializedJson);
+                    var isSuccessfull = TrySerialize(result, out string serializedJson);
                     sw.Stop();
-                    timeToStore = sw.ElapsedTicks;
-                    timeTotal += timeToStore;
-                }
-            }
+                    timeToSerialize = sw.ElapsedTicks;
+                    timeTotal += timeToSerialize;
 
-            _memoizationData.Add((
-                id,
-                false,
-                timeTotal,
-                timeToCheckSerializibility,
-                timeToTryGetValue,
-                timeToDeserialize,
-                timeToSerialize,
-                timeToStore,
-                ""
-            ));
-            return result;
+                    if (isSuccessfull)
+                    {
+                        sw.Restart();
+                        MemoizationDict.Add(id, serializedJson);
+                        sw.Stop();
+                        timeToStore = sw.ElapsedTicks;
+                        timeTotal += timeToStore;
+                    }
+                }
+
+                _memoizationData.Add((
+                    id,
+                    false,
+                    timeTotal,
+                    timeToCheckSerializibility,
+                    timeToTryGetValue,
+                    timeToDeserialize,
+                    timeToSerialize,
+                    timeToStore,
+                    ""
+                ));
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _memoizationData.Add((
+                    id,
+                    false,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    ex.ToString()
+                ));
+                return func();
+            }
 #else
             var serializabilityStored =
                 IsSerializableTypeDict
-                // IsSerializableTypeDict2
+                    // IsSerializableTypeDict2
                     .TryGetValue(typeof(T).FullName!, out string isSerializable);
-                var typeIsSerializable = serializabilityStored && bool.Parse(isSerializable);
+            var typeIsSerializable = serializabilityStored && bool.Parse(isSerializable);
 
             if (typeIsSerializable)
             {
                 bool foundValue = MemoizationDict.TryGetValue(id, out var value);
 
 
-
                 if (foundValue)
                 {
-                    T? v = JsonSerializer.Deserialize<T>(value, Options);
+                    T? v = DoDeserialize<T>(value);
 
                     if (v != null)
                     {
@@ -244,7 +291,6 @@ namespace Stryker
             // then check if type is serializable (but maybe not in memoization). If not yet checked, Check if serializable
             if (result == null || !serializabilityStored || typeIsSerializable)
             {
-
                 var isSuccessfull = TrySerialize(result, out string serializedJson);
 
                 if (isSuccessfull)
@@ -258,16 +304,37 @@ namespace Stryker
 #endif
         }
 
+        private static T DoDeserialize<T>(string value)
+        {
+#if NETFRAMEWORK
+                return Newtonsoft.Json.JsonConvert.DeserializeObject<T>(value, Settings);
+#elif NETCOREAPP3_0_OR_GREATER
+                return JsonSerializer.Deserialize<T>(value, Options);
+#else
+                #error Unsupported target framework. Please compile for .NET Framework or .NET Core 3.0+
+#endif
+        }
+        public static string DoSerialize(object obj)
+        {
+#if NETFRAMEWORK
+            return JsonConvert.SerializeObject(value, obj?.GetType(), Settings);
+#elif NETCOREAPP3_0_OR_GREATER
+            throw new ArgumentException("");
+            return JsonSerializer.Serialize(obj, obj?.GetType(), Options);
+#else
+                #error Unsupported target framework. Please compile for .NET Framework or .NET Core 3.0+
+#endif
+        }
         // check with: Stryker.MemoizationControl.GenerateMemoizationId(ID, PARAMS)
         public static string GenerateMemoizationId(string methodIdentifier, params object[] args)
             => methodIdentifier + "†" + string.Join(
-                ",",
+                "‡",
                 GetSerializableArgs(args)
             );
 
-        private static IEnumerable<string> GetSerializableArgs(object[] args)
+        private static System.Collections.Generic.IEnumerable<string> GetSerializableArgs(object[] args)
         {
-            List<string> acc = new();
+            System.Collections.Generic.List<string> acc = new();
             foreach (var arg in args)
             {
                 if (arg == null)
@@ -298,7 +365,6 @@ namespace Stryker
 
         private static bool TrySerialize(object obj, out string serializedJson)
         {
-
             serializedJson = null;
 
             var serializabilityFound =
@@ -310,7 +376,7 @@ namespace Stryker
                 {
                     try
                     {
-                        serializedJson = JsonSerializer.Serialize(obj, obj?.GetType(), Options);
+                        serializedJson = DoSerialize(obj);
                         return true;
                     }
                     catch
@@ -324,7 +390,7 @@ namespace Stryker
 
             try
             {
-                serializedJson = JsonSerializer.Serialize(obj, obj?.GetType(), Options);
+                serializedJson = DoSerialize(obj);
                 IsSerializableTypeDict.Add(obj.GetType().FullName, true.ToString());
                 return true;
             }
@@ -383,6 +449,44 @@ namespace Stryker
     }
 
     #region JsonConverter
+
+#if NETFRAMEWORK
+public class AllFieldsConverter : JsonConverter
+{
+    public override bool CanConvert(Type objectType) =>
+        objectType.IsClass && objectType.GetConstructor(Type.EmptyTypes) != null;
+
+    public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+    {
+        var obj = Activator.CreateInstance(objectType);
+        var fields = objectType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+        var jObject = Newtonsoft.Json.Linq.JObject.Load(reader);
+        foreach (var field in fields)
+        {
+            if (jObject.TryGetValue(field.Name, out var token))
+            {
+                var fieldValue = token.ToObject(field.FieldType, serializer);
+                field.SetValue(obj, fieldValue);
+            }
+        }
+
+        return obj;
+    }
+
+    public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+    {
+        writer.WriteStartObject();
+        var fields = value.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        foreach (var field in fields)
+        {
+            writer.WritePropertyName(field.Name);
+            serializer.Serialize(writer, field.GetValue(value));
+        }
+        writer.WriteEndObject();
+    }
+}
+#elif NETCOREAPP3_0_OR_GREATER
     public class AllFieldsConverterFactory : JsonConverterFactory
     {
         public override bool CanConvert(Type typeToConvert)
@@ -450,7 +554,9 @@ namespace Stryker
         }
     }
 
+#endif
     #endregion
+
     public class MutexLock : IDisposable
     {
         private readonly Mutex _mutex;
@@ -467,7 +573,8 @@ namespace Stryker
         }
     }
 
-    public class MmfLinkedListStringDictionary : MmfLinkedListStringDictionaryBase, IEnumerable<KeyValuePair<string, string>>
+    public class MmfLinkedListStringDictionary : MmfLinkedListStringDictionaryBase,
+        System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>
     {
         private const int DefaultByteDataCapacity = 1024 * 1024;
 
@@ -479,6 +586,7 @@ namespace Stryker
             : base(name, access, memFile, memPath, byteDataCapacity)
         {
         }
+
         public void Add(string key, string value)
         {
             // var sw = new Stopwatch();
@@ -500,18 +608,21 @@ namespace Stryker
             using (new MutexLock(Mutex)) ;
             return base.GetBytesUsed();
         }
+
         public Mutex GetMutex()
         {
             return Mutex;
         }
 
-        public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
+        public System.Collections.Generic.IEnumerator<System.Collections.Generic.KeyValuePair<string, string>>
+            GetEnumerator()
         {
             return GetEnumeratorInternal();
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
+
     public abstract class VersionManagedMmfDataStructure
     {
         [StructLayout(LayoutKind.Sequential)]
@@ -595,256 +706,254 @@ namespace Stryker
     }
 
     public class MmfLinkedListStringDictionaryBase : VersionManagedMmfDataStructure
-{
-    public static readonly int[] Primes =
-    [
-        3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
-        1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103, 12143, 14591,
-        17519, 21023, 25229, 30293, 36353, 43627, 52361, 62851, 75431, 90523, 108631, 130363, 156437,
-        187751, 225307, 270371, 324449, 389357, 467237, 560689, 672827, 807403, 968897, 1162687, 1395263,
-        1674319, 2009191, 2411033, 2893249, 3471899, 4166287, 4999559, 5999471, 7199369
-    ];
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct Header
     {
-        public uint Magic; // e.g. 0xCAFEBABE
-        public int version;
-        public long BytesUsed;
-        [MarshalAs(UnmanagedType.I1)] public bool IsCurrent;
-    }
+        public static readonly int[] Primes =
+        [
+            3, 7, 11, 17, 23, 29, 37, 47, 59, 71, 89, 107, 131, 163, 197, 239, 293, 353, 431, 521, 631, 761, 919,
+            1103, 1327, 1597, 1931, 2333, 2801, 3371, 4049, 4861, 5839, 7013, 8419, 10103, 12143, 14591,
+            17519, 21023, 25229, 30293, 36353, 43627, 52361, 62851, 75431, 90523, 108631, 130363, 156437,
+            187751, 225307, 270371, 324449, 389357, 467237, 560689, 672827, 807403, 968897, 1162687, 1395263,
+            1674319, 2009191, 2411033, 2893249, 3471899, 4166287, 4999559, 5999471, 7199369
+        ];
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct EntryHeader
-    {
-        public int Index;
-        public int Next; // 0 will work as end of list as 0 offset would be in the header, so we can safely use it.
-        public int SizeOfKey;
-        public int SizeOfValue;
-
-        // Not in header due to variable size
-        // public string Key;
-        // public string Value;
-    }
-    //
-    // private const int DefaultByteDataCapacity = 1024 * 1024; // 1000 * 4 entries, assuming simple 4 byte TKey and TValue
-
-    // Offsets within each entry
-    private const int IndexOffset = 0;
-    private const int NextOffset = 4;
-    private const int SizeOfKeyOffset = 8;
-    private const int SizeOfValueOffset = 12;
-    private const int KeyOffset = 16;
-    private readonly int _headerSize = Marshal.SizeOf<Header>();
-    private readonly int _entryHeaderSize = Marshal.SizeOf<EntryHeader>();
-
-    // Backing Data Structure objects
-    private MemoryMappedFile _mmf;
-    private MemoryMappedViewAccessor _accessor;
-    protected readonly Mutex Mutex;
-    // private readonly EventWaitHandle _ewh;
-    // private readonly RegisteredWaitHandle _rwh;
-
-    // Configuration fields
-    private readonly MemoryMappedFileAccess _mmfAccess;
-    private readonly string _mmfName;
-
-    protected MmfLinkedListStringDictionaryBase(
-        string name,
-        MemoryMappedFileAccess access,
-        string memFile,
-        string memPath,
-        int byteDataCapacity)
-        : base(name, byteDataCapacity)
-    {
-        _mmfName = name;
-        _mmfAccess = access;
-
-        string filePath = $@"{memPath}\{memFile}";
-
-        using (FileStream fs = new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite))
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Header
         {
-            fs.SetLength(byteDataCapacity); // sets file size
-            _mmf = MemoryMappedFile.CreateFromFile(fs, null, byteDataCapacity, MemoryMappedFileAccess.ReadWrite, HandleInheritability.None, true);
+            public uint Magic; // e.g. 0xCAFEBABE
+            public int version;
+            public long BytesUsed;
+            [MarshalAs(UnmanagedType.I1)] public bool IsCurrent;
         }
-        // _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.OpenOrCreate, name);
 
-        _accessor = _mmf.CreateViewAccessor();
-        Mutex = new Mutex(false, $"{name}Mutex", out bool createdNew);
-
-        if (createdNew)
+        [StructLayout(LayoutKind.Sequential)]
+        private struct EntryHeader
         {
-            // If Mmf is newly made, initialize its header
-            Header header = new Header
-            {
-                Magic = 0xCAFEBABE,
-                version = 1,
-                IsCurrent = true
-            };
-            _accessor.Write(0, ref header);
+            public int Index;
+            public int Next; // 0 will work as end of list as 0 offset would be in the header, so we can safely use it.
+            public int SizeOfKey;
+            public int SizeOfValue;
+
+            // Not in header due to variable size
+            // public string Key;
+            // public string Value;
         }
-    }
+        //
+        // private const int DefaultByteDataCapacity = 1024 * 1024; // 1000 * 4 entries, assuming simple 4 byte TKey and TValue
 
-    protected override void ValidateVersionOfMmf()
-    {
+        // Offsets within each entry
+        private const int IndexOffset = 0;
+        private const int NextOffset = 4;
+        private const int SizeOfKeyOffset = 8;
+        private const int SizeOfValueOffset = 12;
+        private const int KeyOffset = 16;
+        private readonly int _headerSize = Marshal.SizeOf<Header>();
+        private readonly int _entryHeaderSize = Marshal.SizeOf<EntryHeader>();
 
-    }
+        // Backing Data Structure objects
+        private MemoryMappedFile _mmf;
+        private MemoryMappedViewAccessor _accessor;
 
-    // private void Resize()
-    // {
-    // }
-    protected long GetCapacity()
-    {
-        return _accessor.Capacity;
-    }
-    protected long GetBytesUsed()
-    {
-        _accessor.Read(0, out Header header);
-        return header.BytesUsed;
-    }
+        protected readonly Mutex Mutex;
+        // private readonly EventWaitHandle _ewh;
+        // private readonly RegisteredWaitHandle _rwh;
 
-    protected void AddInternal(string key, string value)
-    {
-        // ValidateVersionOfMmf();
-        if (!(_accessor.CanRead || _accessor.CanWrite))
-            throw new InvalidOperationException(
-                "Internal: MMF accessor is does not have the required Read/Write permissions.");
-        int currentPositionOffset = _headerSize;
+        // Configuration fields
+        private readonly MemoryMappedFileAccess _mmfAccess;
+        private readonly string _mmfName;
 
-        while (true)
+        protected MmfLinkedListStringDictionaryBase(
+            string name,
+            MemoryMappedFileAccess access,
+            string memFile,
+            string memPath,
+            int byteDataCapacity)
+            : base(name, byteDataCapacity)
         {
-            // LOGIC IF WE HANDLE DUPLICATE INSERTS/ADDS OF KEYS
-            // int keySize = _accessor.ReadInt32(currentPositionOffset + SizeOfKeyOffset);
-            // byte[] keyBytes = new byte[keySize];
-            // _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, keySize);
-            // string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
-            // if (key == entryKey)
-            // {
-            //     // TODO decide:
-            //     //  Overwrite, Overwrite is logical, but cannot in current array structure.
-            //     //  ignore,
-            //     //  throw exception? Since we dont expect an add, if key exists and is retrieved.
-            //     throw new ArgumentException("INTERNAL: An item with the same key has already been added.");
-            // }
+            _mmfName = name;
+            _mmfAccess = access;
 
-            _accessor.Read(currentPositionOffset, out EntryHeader eh);
+            string filePath = $@"{memPath}\{memFile}";
 
-            if (eh.Next is not 0) //not end of list
+            using (FileStream fs = new FileStream(filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+                       FileShare.ReadWrite))
             {
-                currentPositionOffset = eh.Next;
-                continue;
+                fs.SetLength(byteDataCapacity); // sets file size
+                _mmf = MemoryMappedFile.CreateFromFile(fs, null, byteDataCapacity, MemoryMappedFileAccess.ReadWrite,
+                    HandleInheritability.None, true);
             }
+            // _mmf = MemoryMappedFile.CreateFromFile(filePath, FileMode.OpenOrCreate, name);
 
-            int newEntryPosition = currentPositionOffset;
-            if (eh.SizeOfKey != 0) // Check to determine if this is the first entry
+            _accessor = _mmf.CreateViewAccessor();
+            Mutex = new Mutex(false, $"{name}Mutex", out bool createdNew);
+
+            if (createdNew)
             {
-                newEntryPosition += KeyOffset + eh.SizeOfKey + eh.SizeOfKey;
+                // If Mmf is newly made, initialize its header
+                Header header = new Header { Magic = 0xCAFEBABE, version = 1, IsCurrent = true };
+                _accessor.Write(0, ref header);
             }
+        }
 
-            byte[] newKeyBytes = System.Text.Encoding.UTF8.GetBytes(key);
-            byte[] newValueBytes = System.Text.Encoding.UTF8.GetBytes(value);
+        protected override void ValidateVersionOfMmf()
+        {
+        }
 
-            if (newEntryPosition + _entryHeaderSize + newKeyBytes.Length + newValueBytes.Length > _accessor.Capacity)
-            {
-                // Resize if Size of new entry exceeds current capacity of bytes
-                throw new IndexOutOfRangeException("Backing MMF is too small");
-                // Resize();
-            }
+        // private void Resize()
+        // {
+        // }
+        protected long GetCapacity()
+        {
+            return _accessor.Capacity;
+        }
 
-            //Write new entry
-            _accessor.Write(newEntryPosition + NextOffset, 0);
-            _accessor.Write(newEntryPosition + SizeOfKeyOffset, newKeyBytes.Length);
-            _accessor.Write(newEntryPosition + SizeOfValueOffset, newValueBytes.Length);
-            _accessor.WriteArray(newEntryPosition + KeyOffset, newKeyBytes, 0, newKeyBytes.Length);
-            _accessor.WriteArray(newEntryPosition + KeyOffset + newKeyBytes.Length, newValueBytes, 0,
-                newValueBytes.Length);
-
-            if (eh.SizeOfKey != 0)
-            {
-                // update previous entry's next value
-                _accessor.Write(currentPositionOffset + NextOffset, newEntryPosition);
-            }
-
+        protected long GetBytesUsed()
+        {
             _accessor.Read(0, out Header header);
-            header.BytesUsed = newEntryPosition + KeyOffset + newKeyBytes.Length + newValueBytes.Length; // End of inserted entry
-            _accessor.Write(0, ref header);
-
-
-            return;
+            return header.BytesUsed;
         }
-    }
 
-    protected bool TryGetValueInternal(string key, out string value)
-    {
-        // ValidateVersionOfMmf();
-        if (!(_accessor.CanRead || _accessor.CanWrite))
-            throw new InvalidOperationException(
-                "Internal: MMF accessor is does not have the required Read/Write permissions.");
-
-        int currentPositionOffset = _headerSize;
-        while (true)
+        protected void AddInternal(string key, string value)
         {
-            _accessor.Read(currentPositionOffset, out EntryHeader eh);
+            // ValidateVersionOfMmf();
+            if (!(_accessor.CanRead || _accessor.CanWrite))
+                throw new InvalidOperationException(
+                    "Internal: MMF accessor is does not have the required Read/Write permissions.");
+            int currentPositionOffset = _headerSize;
 
-            byte[] keyBytes = new byte[eh.SizeOfKey];
-            _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, eh.SizeOfKey);
-            string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
-
-            if (key == entryKey)
+            while (true)
             {
+                // LOGIC IF WE HANDLE DUPLICATE INSERTS/ADDS OF KEYS
+                // int keySize = _accessor.ReadInt32(currentPositionOffset + SizeOfKeyOffset);
+                // byte[] keyBytes = new byte[keySize];
+                // _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, keySize);
+                // string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
+                // if (key == entryKey)
+                // {
+                //     // TODO decide:
+                //     //  Overwrite, Overwrite is logical, but cannot in current array structure.
+                //     //  ignore,
+                //     //  throw exception? Since we dont expect an add, if key exists and is retrieved.
+                //     throw new ArgumentException("INTERNAL: An item with the same key has already been added.");
+                // }
+
+                _accessor.Read(currentPositionOffset, out EntryHeader eh);
+
+                if (eh.Next is not 0) //not end of list
+                {
+                    currentPositionOffset = eh.Next;
+                    continue;
+                }
+
+                int newEntryPosition = currentPositionOffset;
+                if (eh.SizeOfKey != 0) // Check to determine if this is the first entry
+                {
+                    newEntryPosition += KeyOffset + eh.SizeOfKey + eh.SizeOfKey;
+                }
+
+                byte[] newKeyBytes = System.Text.Encoding.UTF8.GetBytes(key);
+                byte[] newValueBytes = System.Text.Encoding.UTF8.GetBytes(value);
+
+                if (newEntryPosition + _entryHeaderSize + newKeyBytes.Length + newValueBytes.Length >
+                    _accessor.Capacity)
+                {
+                    // Resize if Size of new entry exceeds current capacity of bytes
+                    throw new IndexOutOfRangeException("Backing MMF is too small");
+                    // Resize();
+                }
+
+                //Write new entry
+                _accessor.Write(newEntryPosition + NextOffset, 0);
+                _accessor.Write(newEntryPosition + SizeOfKeyOffset, newKeyBytes.Length);
+                _accessor.Write(newEntryPosition + SizeOfValueOffset, newValueBytes.Length);
+                _accessor.WriteArray(newEntryPosition + KeyOffset, newKeyBytes, 0, newKeyBytes.Length);
+                _accessor.WriteArray(newEntryPosition + KeyOffset + newKeyBytes.Length, newValueBytes, 0,
+                    newValueBytes.Length);
+
+                if (eh.SizeOfKey != 0)
+                {
+                    // update previous entry's next value
+                    _accessor.Write(currentPositionOffset + NextOffset, newEntryPosition);
+                }
+
+                _accessor.Read(0, out Header header);
+                header.BytesUsed =
+                    newEntryPosition + KeyOffset + newKeyBytes.Length + newValueBytes.Length; // End of inserted entry
+                _accessor.Write(0, ref header);
+
+
+                return;
+            }
+        }
+
+        protected bool TryGetValueInternal(string key, out string value)
+        {
+            // ValidateVersionOfMmf();
+            if (!(_accessor.CanRead || _accessor.CanWrite))
+                throw new InvalidOperationException(
+                    "Internal: MMF accessor is does not have the required Read/Write permissions.");
+
+            int currentPositionOffset = _headerSize;
+            while (true)
+            {
+                _accessor.Read(currentPositionOffset, out EntryHeader eh);
+
+                byte[] keyBytes = new byte[eh.SizeOfKey];
+                _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, eh.SizeOfKey);
+                string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
+
+                if (key == entryKey)
+                {
+                    byte[] valueBytes = new byte[eh.SizeOfValue];
+                    _accessor.ReadArray(currentPositionOffset + KeyOffset + eh.SizeOfKey, valueBytes, 0,
+                        eh.SizeOfValue);
+                    value = System.Text.Encoding.Default.GetString(valueBytes);
+                    return true;
+                }
+
+                if (eh.Next is 0) // End of list
+                {
+                    break;
+                }
+
+                currentPositionOffset = eh.Next;
+            }
+
+            value = null;
+            return false;
+        }
+
+        public System.Collections.Generic.IEnumerator<System.Collections.Generic.KeyValuePair<string, string>>
+            GetEnumeratorInternal()
+        {
+            // ValidateVersionOfMmf();
+
+            if (!(_accessor.CanRead || _accessor.CanWrite))
+                throw new InvalidOperationException(
+                    "Internal: MMF accessor does not have the required Read/Write permissions.");
+
+            int currentPositionOffset = _headerSize;
+
+            while (true)
+            {
+                _accessor.Read(currentPositionOffset, out EntryHeader eh);
+
+                // Read key (but discard it, since we only want values)
+                byte[] keyBytes = new byte[eh.SizeOfKey];
+                _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, eh.SizeOfKey);
+                string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
+
+                // Read value
                 byte[] valueBytes = new byte[eh.SizeOfValue];
                 _accessor.ReadArray(currentPositionOffset + KeyOffset + eh.SizeOfKey, valueBytes, 0, eh.SizeOfValue);
-                value = System.Text.Encoding.Default.GetString(valueBytes);
-                return true;
+                var value = System.Text.Encoding.Default.GetString(valueBytes);
+
+                yield return new System.Collections.Generic.KeyValuePair<string, string>(entryKey, value);
+
+                if (eh.Next <= 0) // End of list
+                    yield break;
+
+                currentPositionOffset = eh.Next;
             }
-
-            if (eh.Next is 0) // End of list
-            {
-                break;
-            }
-
-            currentPositionOffset = eh.Next;
         }
-
-        value = null;
-        return false;
     }
-
-    public IEnumerator<KeyValuePair<string, string>> GetEnumeratorInternal()
-    {
-        // ValidateVersionOfMmf();
-
-        if (!(_accessor.CanRead || _accessor.CanWrite))
-            throw new InvalidOperationException(
-                "Internal: MMF accessor does not have the required Read/Write permissions.");
-
-        int currentPositionOffset = _headerSize;
-
-        while (true)
-        {
-            _accessor.Read(currentPositionOffset, out EntryHeader eh);
-
-            // Read key (but discard it, since we only want values)
-            byte[] keyBytes = new byte[eh.SizeOfKey];
-            _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, eh.SizeOfKey);
-            string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
-
-            // Read value
-            byte[] valueBytes = new byte[eh.SizeOfValue];
-            _accessor.ReadArray(currentPositionOffset + KeyOffset + eh.SizeOfKey, valueBytes, 0, eh.SizeOfValue);
-            var value = System.Text.Encoding.Default.GetString(valueBytes);
-
-            yield return new KeyValuePair<string, string>(entryKey, value);
-
-            if (eh.Next <= 0) // End of list
-                yield break;
-
-            currentPositionOffset = eh.Next;
-        }
-
-    }
-
-}
-
-
 }

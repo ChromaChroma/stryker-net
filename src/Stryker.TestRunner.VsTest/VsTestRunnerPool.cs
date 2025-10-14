@@ -199,7 +199,7 @@ public sealed class VsTestRunnerPool : ITestRunner
 
         var memoizationDataList = string.IsNullOrWhiteSpace(mdcRecordValue)
             ? []
-            : mdcRecordValue.TrimEnd(';').Split(';')
+            : mdcRecordValue.TrimEnd('⹋').Split('⹋')
                 .Select(recordString =>
                 {
                     var parts = recordString.Split('†');

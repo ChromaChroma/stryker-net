@@ -225,6 +225,31 @@ public class CSharpRollbackProcess : ICSharpRollbackProcess
             trackedTree = trackedTree.ReplaceNode(nodeToRemove, MutantPlacer.RemoveMutant(nodeToRemove));
         }
 
+        // foreach (var diagnostic in diagnostics.Where(diagnostic => diagnostic.Id == "CS0104"))
+        // {
+        //     trackedTree
+        //
+        //
+        //     var st = diagnostic.Location.SourceTree;
+        //     var root = st.GetRoot();
+        //     var explicitUsingsMemoization = root.DescendantNodesAndSelf()
+        //         .OfType<UsingDirectiveSyntax>()
+        //         .Where(n => n.HasAnnotations("ExplicitUsingsMemoization"))
+        //         .ToList();
+        //
+        //     if (explicitUsingsMemoization.Any())
+        //     {
+        //         root = root.RemoveNodes(
+        //             root.DescendantNodesAndSelf()
+        //                 .OfType<UsingDirectiveSyntax>()
+        //                 .Where(n => n.HasAnnotations("ExplicitUsingsMemoization")),
+        //             SyntaxRemoveOptions.KeepNoTrivia
+        //         );
+        //
+        //         var newSt = st.WithRootAndOptions(root, st.Options);
+        //     }
+        // }
+
         return trackedTree.SyntaxTree;
     }
 
@@ -314,6 +339,17 @@ public class CSharpRollbackProcess : ICSharpRollbackProcess
     private Collection<SyntaxNode> IdentifyMutationsAndFlagForRollback(IEnumerable<Diagnostic> diagnosticInfo,
         SyntaxNode rollbackRoot, out Diagnostic[] diagnostics)
     {
+        // Define the imports we care about removing if they cause ambiguity
+        var predefinedImports = new HashSet<string>
+        {
+            "System",
+            "System.IO",
+            "System.Linq",
+            "System.Collections.Generic",
+            "System.Threading",
+            "System.Threading.Tasks"
+        };
+
         var brokenMutations = new Collection<SyntaxNode>();
         diagnostics = diagnosticInfo as Diagnostic[] ?? diagnosticInfo.ToArray();
         foreach (var diagnostic in diagnostics)
@@ -339,8 +375,63 @@ public class CSharpRollbackProcess : ICSharpRollbackProcess
             }
         }
 
+        // foreach (var uds in rollbackRoot.DescendantNodes().OfType<UsingDirectiveSyntax>()
+        //              .Where(n => n.HasAnnotations("ExplicitUsingsMemoization")))
+        // {
+        //     brokenMutations.Add(uds);
+        // }
+// --- 2. Handle ambiguous usings (CS0104) ---
+        var ambiguousDiagnostics = diagnostics
+            .Where(d => d.Id == "CS0104")
+            .ToList();
+
+        if (ambiguousDiagnostics.Any())
+        {
+            // Find all using directives that were explicitly added (and memoized)
+            var explicitUsings = rollbackRoot
+                .DescendantNodes()
+                .OfType<UsingDirectiveSyntax>()
+                .Where(u => u.GetAnnotations("ExplicitUsingsMemoization").Any())
+                .ToList();
+
+            foreach (var diagnostic in ambiguousDiagnostics)
+            {
+                // Optional: extract the conflicting type info from message
+                var msg = diagnostic.GetMessage();
+                // "'Action' is an ambiguous reference between 'System.Action' and 'MyNamespace.Action'"
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    msg,
+                    @"'(?<symbol>[^']+)' is an ambiguous reference between '(?<using1>[^']+)' and '(?<using2>[^']+)'"
+                );
+
+                if (!match.Success) continue;
+
+                var using1 = match.Groups["using1"].Value.Split('.')[0];
+                var using2 = match.Groups["using2"].Value.Split('.')[0];
+
+                // Check if either namespace belongs to our predefined import set
+                var shouldRemove = explicitUsings
+                    .Where(u =>
+                    {
+                        var name = u.Name.ToString();
+                        return predefinedImports.Contains(name)
+                            && (name.Equals(using1) || name.Equals(using2));
+                    })
+                    .ToList();
+
+                foreach (var u in shouldRemove)
+                {
+                    if (!brokenMutations.Contains(u))
+                    {
+                        brokenMutations.Add(u);
+                    }
+                }
+            }
+        }
+
         return brokenMutations;
     }
+
 
     private void FlagChildrenMutationsForRollback(SyntaxNode mutationIf, Collection<SyntaxNode> brokenMutations)
     {

@@ -338,7 +338,7 @@ public class InputFileResolver : IInputFileResolver
             {
                 if (importantProperties.Contains(property.Key))
                 {
-                    continue; // already logged 
+                    continue; // already logged
                 }
 
                 log.AppendLine($"Property {property.Key}={property.Value.Replace(Environment.NewLine, "\\n")}");

@@ -72,7 +72,7 @@ internal class NodeSpecificOrchestrator<TNode, TBase> : INodeOrchestrator where 
         context.AddMutations(mutations);
 
     /// <summary>
-    /// Mutate children, grandchildren (recursively). 
+    /// Mutate children, grandchildren (recursively).
     /// </summary>
     /// <param name="node">Node which children will be mutating</param>
     /// <param name="semanticModel"></param>
@@ -82,7 +82,7 @@ internal class NodeSpecificOrchestrator<TNode, TBase> : INodeOrchestrator where 
     /// skip mutating the children node.</remarks>
     protected virtual TBase OrchestrateChildrenMutation(TNode node, SemanticModel semanticModel, MutationContext context) =>
         node.ReplaceNodes(node.ChildNodes(),
-            computeReplacementNode: (original, _) => context.Mutate(original, semanticModel));
+            computeReplacementNode: (original, _) =>  context.Mutate(original, semanticModel));
 
     /// <summary>
     /// Set up the mutation context before triggering mutation.

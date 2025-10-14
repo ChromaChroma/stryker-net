@@ -133,7 +133,7 @@ public sealed class VsTestRunner : IDisposable
                     var mdcRecordValue = mdcValue as string;
                     var memoizationDataList = string.IsNullOrWhiteSpace(mdcRecordValue)
                         ? []
-                        : mdcRecordValue.TrimEnd(';').Split(';')
+                        : mdcRecordValue.TrimEnd('⹋').Split('⹋')
                             .Select(recordString =>
                             {
                                 var parts = recordString.Split('†');

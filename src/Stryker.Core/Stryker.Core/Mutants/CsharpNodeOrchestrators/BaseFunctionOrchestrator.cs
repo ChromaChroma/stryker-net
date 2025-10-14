@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using Microsoft.Build.Logging.StructuredLogger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
+using Stryker.Abstractions.Memoization;
 using Stryker.Core.Helpers;
 using Stryker.Core.Instrumentation;
 using Stryker.Core.Memoization;
@@ -229,40 +231,109 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 {
                     blockBodyOriginal = Block(ReturnStatement(expressionBodyOriginal.WithLeadingTrivia(Space)));
                 }
-                var writtenExternalVariables = ExternalVariableUsageAnalyser.GetExternalWrites(blockBodyOriginal, semanticModel)
+
+
+                var hasAwaitExpressions = blockBodyOriginal.Statements
+                    .SelectMany(s => s.DescendantNodesAndSelf().OfType<AwaitExpressionSyntax>()).Any();
+
+                var descendantInvocations = blockBodyOriginal.Statements
+                    .SelectMany(s => s.DescendantNodesAndSelf().OfType<InvocationExpressionSyntax>())
+                    .ToList();
+                var hasTaskInvocations = descendantInvocations
+                    .Any(inv => semanticModel.GetTypeInfo(inv).Type?.Name is "Task" or "ValueTask");
+
+                var hasExternalInvocations =
+                    descendantInvocations.Where(inv => UtilityFunctions.IsExternalInvocation(inv, semanticModel))
+                        .ToList();
+                // // .SelectMany(s => s.DescendantNodesAndSelf().OfType<VariableDeclarationSyntax>())
+                // .Select(vds => UtilityFunctions.InferType(vds, semanticModel))
+                // .Any(t => t.Item2);
+
+
+                var writtenExternalVariables = ExternalVariableUsageAnalyser
+                    .GetExternalWrites(blockBodyOriginal, semanticModel)
                     .Where(s => s is not IParameterSymbol).ToList();
                 var sourceNodeContainingType = semanticModel.GetDeclaredSymbol(sourceNode)?.ContainingType;
 
-                var variablesRead = ExternalVariableUsageAnalyser.GetExternalFieldReads(blockBodyOriginal, semanticModel).ToList();
+                var variablesRead = ExternalVariableUsageAnalyser
+                    .GetExternalFieldReads(blockBodyOriginal, semanticModel).ToList();
 
-                var thisVariablesRead = variablesRead.Where(s => s.ContainingType != null && SymbolEqualityComparer.Default.Equals(s.ContainingType, sourceNodeContainingType)).ToList();
+                var thisVariablesRead = variablesRead.Where(s =>
+                    s.ContainingType != null &&
+                    SymbolEqualityComparer.Default.Equals(s.ContainingType, sourceNodeContainingType)).ToList();
                 var externalVariablesRead = variablesRead.Except(variablesRead).ToList();
                 // var thisVariablesRead = readExternalVariables.Where(s =>
                 //     s.ContainingType != null && SymbolEqualityComparer.Default.Equals(s.ContainingType, sourceNodeContainingType)).ToList();
                 // var dfReadOutside = semanticModel.AnalyzeDataFlow(GetBodies(sourceNode).block).ReadOutside
                 //     .Where(n => n is ILocalSymbol).ToList();
 
-                if (writtenExternalVariables.Any())
+                if (hasAwaitExpressions || hasTaskInvocations)
+                {
+                    NotMemoizedCollector.Add(ReasonType.UsesThreadingOrAsynchronousOperations, MemoizationLevel.Method,
+                        "Async inner usage.", sourceNode);
+                }
+                else if (writtenExternalVariables.Any())
                 {
                     NotMemoizedCollector.Add(ReasonType.AltersStateOutsideScope, MemoizationLevel.Method,
-                        "Alters state outside scope: " +string.Join(", ", writtenExternalVariables.Select(s => s.OriginalDefinition.ToString())),
+                        "Alters state outside scope: " + string.Join(", ",
+                            writtenExternalVariables.Select(s => s.OriginalDefinition.ToString())),
                         sourceNode);
                 }
-                else if(externalVariablesRead.Count > 0)
+                else if (externalVariablesRead.Count > 0)
                 {
                     NotMemoizedCollector.Add(ReasonType.ReliesOnExternalState, MemoizationLevel.Method,
-                        "Relies on external state: " +string.Join(", ", externalVariablesRead.Select(s => s.OriginalDefinition.ToString())),
+                        "Relies on external state: " + string.Join(", ",
+                            externalVariablesRead.Select(s => s.OriginalDefinition.ToString())),
                         sourceNode);
                 }
-                else if(thisVariablesRead.Count > 0 && thisVariablesRead.All(s => !s.IsConst))
+                else if (thisVariablesRead.Count > 0 && thisVariablesRead.All(s => !s.IsConst))
                 {
                     //Todo, Allow Serializable non-const values, like primitives, strings, structs of those And serializable objects. (input params of key)
                     // Compile time serilizability check
 
                     NotMemoizedCollector.Add(ReasonType.ReliesOnThisState, MemoizationLevel.Method,
-                        "Relies on this state: " +string.Join(", ", thisVariablesRead.Select(s => s.OriginalDefinition.ToString())),
+                        "Relies on this state: " + string.Join(", ",
+                            thisVariablesRead.Select(s => s.OriginalDefinition.ToString())),
                         sourceNode);
                 }
+                else if (sourceNode.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any())
+                {
+                    NotMemoizedCollector.Add(ReasonType.StructParentType, MemoizationLevel.Method,
+                        "Defined in struct parent, does not allow this access in lambdas",
+                        sourceNode);
+                }
+                // else if (hasExternalInvocations.Any())
+                // {
+                //     if (hasExternalInvocations.Any(invocation =>
+                //         {
+                //             // Get the expression being invoked
+                //             var expression = invocation.Expression;
+                //
+                //             return expression switch
+                //             {
+                //                 // For simple calls like CreateMap<TSource, TDest>()
+                //                 IdentifierNameSyntax id => id.Identifier.Text == "ForMember",
+                //                 // For member access calls like mapper.CreateMap<TSource, TDest>()
+                //                 MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text ==
+                //                                                              "ForMember",
+                //                 _ => false
+                //             };
+                //         }))
+                //     {
+                //         Console.WriteLine("");
+                //     }
+                //     // if (sourceNode is ConstructorDeclarationSyntax cds)
+                //     // {
+                //     //     if (cds.Identifier.ValueText == "MappingProfile")
+                //     //     {
+                //     //         Console.WriteLine("");
+                //     //     }
+                //     // }
+                //     NotMemoizedCollector.Add(ReasonType.UsesExternalLibrariesOrAPIs, MemoizationLevel.Method,
+                //         "Uses external api calls that cannot be confirmed to be side-effect free: " + string.Join(", ",
+                //             hasExternalInvocations.Select(s => s.ToString())),
+                //         sourceNode);
+                // }
                 // else if (dfReadOutside.Any(n => n.ContainingType.TypeKind == TypeKind.Dynamic))
                 // {
                 //     NotMemoizedCollector.Add(ReasonType.Dynamic, MemoizationLevel.Method,
@@ -270,6 +341,8 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 // }
                 else
                 {
+
+
                     //todo Check if all or part of WrittenOutside is nonmimicable sideeffect
 
                     var allParameters = inParams
@@ -284,7 +357,10 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                     // df.Where(s => s.Name != "this" && s.Name != "value")
                     // .Select(s => IdentifierName(s.Name))
                     // .Concat( inParams.Select(p => IdentifierName(p.Identifier.Text)).ToArray());
-
+                    if (methodReturnMemoizationId == "95,4__public ComplexNumber MathFlow.Core.ComplexMath.ComplexNumber.Log()__RETURN")
+                    {
+                        allParameters = allParameters;
+                    }
 
                     //todo make syntax factory code that takes all (hopefully) args/parameters into account for value
                     var memoizationIdentifier = MutantPlacer.MemoizationInstrumentationEngine
@@ -305,6 +381,20 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 }
             }
 
+
+            if (sourceNode is BaseMethodDeclarationSyntax mds)
+            {
+                string name = mds switch
+                {
+                    MethodDeclarationSyntax m => m.Identifier.Text // Normal method
+                    ,
+                    ConstructorDeclarationSyntax c => c.Identifier.Text // Constructor (class name)
+                    ,
+                    DestructorDeclarationSyntax d => d.Identifier.Text // Destructor (~ClassName)
+                    ,
+                    _ => ""
+                };
+            }
 
             // do we need to change the body
             return originalBody == blockBody

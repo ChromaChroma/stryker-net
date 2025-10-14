@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using Stryker.Core.Memoization;
 
 namespace Stryker.Abstractions.Memoization;
 
@@ -41,6 +40,7 @@ public struct MemoizationInjectionStatistics
 public record MetricResultReport
 {
     public Guid TestRunId { get; init; }
+    public double MutationScore { get; init; }
     public long TotalMemoizationInjectionCalls { get; init; }
     public long TotalUniqueMemoizationInjectionCalls { get; init; }
     public long TotalHits { get; init; }

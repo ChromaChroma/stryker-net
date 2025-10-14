@@ -59,8 +59,8 @@ public class CsharpMutationProcess : IMutationProcess
         var projectInfo = input.SourceProjectInfo.ProjectContents;
         var orchestrator = _orchestrator ?? new CsharpMutantOrchestrator(new MutantPlacer(input.SourceProjectInfo.CodeInjector), options: _options);
         var compilingProcess = new CsharpCompilingProcess(input, options: _options);
-        var semanticModels = compilingProcess.GetSemanticModels(projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().Select(x => x.SyntaxTree)).ToArray();
-
+        var trees = projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().Select(x => x.SyntaxTree);
+        var semanticModels = compilingProcess.GetSemanticModels(trees, out var newTrees).ToArray();
 
         var fileLeaves = projectInfo.GetAllFiles().Cast<CsharpFileLeaf>().ToArray();
         // var tc = new TypeCollector(semanticModels);
@@ -87,9 +87,10 @@ public class CsharpMutationProcess : IMutationProcess
             // _logger.LogInformation("Types of file {Filename}: {TypeList}", file.FullPath, tc.Types.ToList());
 
 
-
             // Mutate the syntax tree
-            var mutatedSyntaxTree = orchestrator.Mutate(file.SyntaxTree, semanticModels.First(x => x.SyntaxTree == file.SyntaxTree));
+            var matchingSemanticModel = semanticModels.First(x => x.SyntaxTree.FilePath == file.SyntaxTree.FilePath);
+            var mutatedSyntaxTree = orchestrator.Mutate(matchingSemanticModel.SyntaxTree, matchingSemanticModel);
+            // var mutatedSyntaxTree = orchestrator.Mutate(file.SyntaxTree, semanticModels.First(x => x.SyntaxTree == file.SyntaxTree));
 
             // //TODO remove when done with POC
             // _logger.LogInformation("Mutated {FullPath}:{NewLine}{MutatedSyntaxTree}",
@@ -107,6 +108,15 @@ public class CsharpMutationProcess : IMutationProcess
         }
 
         _logger.LogDebug("{MutantsCount} mutants created", projectInfo.Mutants.Count());
+        // var errorsm = semanticModels.Where(sm =>
+        //         sm.SyntaxTree.FilePath ==
+        //         "C:\\Dev\\thesis-experiment-projects\\StreamingNotificationFunctionApp\\Raw.Streaming.Discord\\Extensions\\DateTimeOffsetExtensions.cs")
+        //     .First();
+        // var ns = comp.GlobalNamespace
+        //     .GetNamespaceMembers()
+        //     .FirstOrDefault(n => n.Name == "StrykerHVAFewQiD1vOWY9");
+
+
 
         CompileMutations(input, compilingProcess);
     }
@@ -118,6 +128,21 @@ public class CsharpMutationProcess : IMutationProcess
         using var ms = new MemoryStream();
         using var msForSymbols = _options.DevMode ? new MemoryStream() : null;
         // compile the mutated syntax trees
+
+        // projectInfo.CompilationSyntaxTrees = projectInfo.CompilationSyntaxTrees
+        //     .Select(t =>
+        //     {
+        //         var root = t.GetRoot();
+        //
+        //         root = root.RemoveNodes(
+        //             root.DescendantNodesAndSelf()
+        //                 .OfType<UsingDirectiveSyntax>()
+        //                 .Where(n => n.HasAnnotations("ExplicitUsingsMemoization")),
+        //             SyntaxRemoveOptions.KeepNoTrivia
+        //         );
+        //         return t.WithRootAndOptions(root, t.Options);
+        //     }).ToList();
+
         var compileResult = compilingProcess.Compile(projectInfo.CompilationSyntaxTrees, ms, msForSymbols);
 
         foreach (var testProject in info.TestProjectsInfo.AnalyzerResults)

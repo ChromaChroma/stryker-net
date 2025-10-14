@@ -1,4 +1,5 @@
-using System.Collections;
+using System.Linq;
+
 namespace Stryker
 {
 
@@ -90,7 +91,7 @@ namespace Stryker
 
 
         // check with: Stryker.MutantControl.AnyActive(IDS)
-        public static bool AnyActive(IEnumerable<string> ids)
+        public static bool AnyActive(System.Collections.Generic.IEnumerable<string> ids)
         {
 
             if (CaptureCoverage)

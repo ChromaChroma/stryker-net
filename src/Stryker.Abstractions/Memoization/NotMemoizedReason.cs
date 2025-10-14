@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
 using Microsoft.CodeAnalysis;
 
-namespace Stryker.Core.Memoization;
+namespace Stryker.Abstractions.Memoization;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ReasonType
@@ -40,7 +40,9 @@ public enum ReasonType
     UsesEventsOrCallbacks, // Uses events or callbacks that may lead to unpredictable behavior
     FinalizersOrDestructors, // Uses finalizers or destructors that may lead to unpredictable behavior
     DynamicILGeneration,
-    NoImplementation
+    NoImplementation,
+    SwitchExpressionInRightHandSide,
+    StructParentType
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
