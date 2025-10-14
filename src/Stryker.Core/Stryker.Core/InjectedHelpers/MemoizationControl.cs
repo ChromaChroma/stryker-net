@@ -96,6 +96,7 @@ namespace Stryker
             // Debugger.Break();
         }
 
+
         // check with: Stryker.MemoizationControl.RetrieveMemoization<T>(ID, FUNC, PRED)
         public static T RetrieveMemoization<T>(string id, Func<T> func, Func<bool> predicate = null)
         {
@@ -331,6 +332,17 @@ namespace Stryker
                 "‡",
                 GetSerializableArgs(args)
             );
+        // check with: Stryker.MemoizationControl.RetrieveMemoization<T>(ID, FUNC, PRED, ARGS)
+        public static T RetrieveMemoization<T>(string id, Delegate func, Func<bool> predicate = null,
+            params object[] args)
+        {
+            // If mutant active predicate is true, compute original code, do not memoize
+            if (predicate != null && predicate())
+            {
+                return (T)func.DynamicInvoke(args);
+            }
+            return (T)func.DynamicInvoke(args);
+        }
 
         private static System.Collections.Generic.IEnumerable<string> GetSerializableArgs(object[] args)
         {

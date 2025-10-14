@@ -43,6 +43,12 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
     private SyntaxNode _retrieveMemoizationFuncPlaceHolderNode;
     private SyntaxNode _retrieveMemoizationPredPlaceHolderNode;
 
+    private ExpressionSyntax _retrieveMemoizationExpression2;
+    private SyntaxNode _retrieveMemoizationIdPlaceHolderNode2;
+    private SyntaxNode _retrieveMemoizationFuncPlaceHolderNode2;
+    private SyntaxNode _retrieveMemoizationPredPlaceHolderNode2;
+    private SyntaxNode _retrieveMemoizationArgsPlaceHolderNode;
+
 
     protected override SyntaxNode Revert(BlockSyntax node) => throw new NotImplementedException();
 
@@ -159,7 +165,62 @@ internal class MemoizationInstrumentationEngine : BaseEngine<BlockSyntax>
             _ => false
         };
 
+    public InvocationExpressionSyntax RetrieveMemoizationExpression2(
+        ExpressionSyntax id,
+        ExpressionSyntax pred,
+        IdentifierNameSyntax del,
+        IdentifierNameSyntax args,
+        TypeSyntax type,
+        CodeInjection injection)
+    {
+        // Initialize memoization retrieval invocation expression
+        if (_retrieveMemoizationExpression2 == null)
+        {
+            _retrieveMemoizationExpression2 = ParseExpression(injection.MemoizationRetrieveSelectorExpression2);
+            _retrieveMemoizationIdPlaceHolderNode2 = _retrieveMemoizationExpression2.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "ID" });
+            _retrieveMemoizationPredPlaceHolderNode2 = _retrieveMemoizationExpression2.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "PRED" });
+            _retrieveMemoizationFuncPlaceHolderNode2 = _retrieveMemoizationExpression2.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "FUNC" });
+            _retrieveMemoizationArgsPlaceHolderNode = _retrieveMemoizationExpression2.DescendantNodes()
+                .First(n => n is IdentifierNameSyntax { Identifier.Text: "ARGS" });
+        }
+        pred ??= LiteralExpression(SyntaxKind.NullLiteralExpression);
 
+        var retrieveExpr = _retrieveMemoizationExpression2.ReplaceNodes(
+            [_retrieveMemoizationIdPlaceHolderNode2, _retrieveMemoizationFuncPlaceHolderNode2,
+                _retrieveMemoizationPredPlaceHolderNode2, _retrieveMemoizationArgsPlaceHolderNode],
+            (original, _) => original switch
+            {
+                _ when original == _retrieveMemoizationIdPlaceHolderNode2 => id,
+                _ when original == _retrieveMemoizationFuncPlaceHolderNode2 => del,
+                _ when original == _retrieveMemoizationPredPlaceHolderNode2 => pred,
+                _ when original == _retrieveMemoizationArgsPlaceHolderNode => args,
+                _ => original
+            }
+        );
+
+
+        // Replace generic type with return type
+        if (retrieveExpr is InvocationExpressionSyntax
+            {
+                Expression: MemberAccessExpressionSyntax
+                {
+                    Name: GenericNameSyntax genericName
+                } memberAccess
+            } invocationExpression)
+        {
+            var newTypeArgumentList = TypeArgumentList(SingletonSeparatedList(type.WithoutTrivia()));
+            var updatedGenericName = genericName.WithTypeArgumentList(newTypeArgumentList);
+            var updatedMemberAccess = memberAccess.WithName(updatedGenericName);
+
+            return invocationExpression.WithExpression(updatedMemberAccess);
+        }
+
+        throw new InvalidOperationException(
+            "Internal Error: Something went wrong with the memoization retrieval invocation. Please report this as a bug.");
+    }
     public InvocationExpressionSyntax RetrieveMemoizationExpression(
         ExpressionSyntax id, ParenthesizedLambdaExpressionSyntax func,
         ExpressionSyntax pred, TypeSyntax type,

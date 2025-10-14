@@ -6,9 +6,11 @@ using Microsoft.Build.Logging.StructuredLogger;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 using Stryker.Abstractions.Memoization;
 using Stryker.Core.Helpers;
+using Stryker.Core.InjectedHelpers;
 using Stryker.Core.Instrumentation;
 using Stryker.Core.Memoization;
 using Stryker.Utilities.Logging;
@@ -151,6 +153,13 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         MutationContext context)
     {
         var (blockBody, expressionBody) = GetBodies(targetNode);
+        MethodDeclarationSyntax method = null;
+        bool isMethodDecl = false;
+        if (targetNode is MethodDeclarationSyntax declarationSyntax)
+        {
+            method = declarationSyntax;
+            isMethodDecl = true;
+        }
 
         if (expressionBody == null && blockBody == null)
         {
@@ -210,11 +219,11 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
                     "Method has uses yield keyword", sourceNode);
             }
-            else if (outParams.Count > 0)
-            {
-                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
-                    "Method has uses out parameters", sourceNode);
-            }
+            // else if (outParams.Count > 0)
+            // {
+            //     NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+            //         "Method has uses out parameters", sourceNode);
+            // }
             else if (refParams.Count > 0)
             {
                 NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
@@ -273,6 +282,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 {
                     nts = symbol;
                 }
+
                 if (hasAwaitExpressions || hasTaskInvocations)
                 {
                     NotMemoizedCollector.Add(ReasonType.UsesThreadingOrAsynchronousOperations, MemoizationLevel.Method,
@@ -359,8 +369,6 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 // }
                 else
                 {
-
-
                     //todo Check if all or part of WrittenOutside is nonmimicable sideeffect
 
                     var allParameters = inParams
@@ -371,11 +379,13 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                     {
                         allParameters = allParameters.Append(ThisExpression()).ToArray();
                     }
+
                     //Ignored vvoor nu, data in exact (method calls ook, niet te herkennen)
                     // df.Where(s => s.Name != "this" && s.Name != "value")
                     // .Select(s => IdentifierName(s.Name))
                     // .Concat( inParams.Select(p => IdentifierName(p.Identifier.Text)).ToArray());
-                    if (methodReturnMemoizationId == "95,4__public ComplexNumber MathFlow.Core.ComplexMath.ComplexNumber.Log()__RETURN")
+                    if (methodReturnMemoizationId ==
+                        "95,4__public ComplexNumber MathFlow.Core.ComplexMath.ComplexNumber.Log()__RETURN")
                     {
                         allParameters = allParameters;
                     }
@@ -396,22 +406,187 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                     blockBody = Block(ReturnStatement(invocation.WithLeadingTrivia(Space)));
                     NotMemoizedCollector.Add(ReasonType.None, MemoizationLevel.Method, "Memoization HAS been added",
                         sourceNode);
+
+
+                    if (isMethodDecl &&
+                        (!parameters.FirstOrDefault()?.Modifiers.Any(m => m.IsKind(SyntaxKind.ThisKeyword)) ?? true))
+                    {
+                        var innerName = method.Identifier.Text + CodeInjection.GetRandomVariableName(); //"_Inner";
+                        // if (method.Identifier.Text == "Sum")
+                        // {
+                        //     Console.WriteLine(
+                        //         (parameters.FirstOrDefault()?.Modifiers.Any(m => m.IsKind(SyntaxKind.ThisKeyword)) ?? false));
+                        //
+                        // }
+
+
+                        // var innerMethod = method.WithIdentifier(Identifier(innerName)
+                        //         .WithTriviaFrom(method.Identifier) // preserve comments/formatting
+                        // );
+                        // Create the local function
+                        var innerLocalFunction = LocalFunctionStatement(
+                                method.ReturnType, // same return type
+                                Identifier(innerName)) // new name
+                            .WithParameterList(method.ParameterList) // same parameters
+                            .WithBody(method.Body) // original body
+                            .WithModifiers(TokenList()) // usually no modifiers for local function
+                            .WithExpressionBody(null)
+                            .WithSemicolonToken(default);
+
+                        var delegateVarName = "delegate_" + CodeInjection.GetRandomVariableName();
+
+                        var variableDeclaration = VariableDeclaration(
+                                IdentifierName("Delegate").WithTrailingTrivia(Space)) // type
+                            .WithVariables(SingletonSeparatedList(VariableDeclarator(delegateVarName)
+                                .WithInitializer(EqualsValueClause(IdentifierName(innerName))))
+                            );
+                        var localDeclaration = LocalDeclarationStatement(variableDeclaration)
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+
+
+                        // var argList = SeparatedList<ArgumentSyntax>();
+                        // argList = argList.Add(Argument(IdentifierName(delegateVarName)));
+                        //
+                        // // Append parameters in order: out, ref, then remaining (in/normal)
+                        // foreach (var p in outParams.Concat(refParams).Concat(inParams))
+                        // {
+                        //     argList = argList.Add(Argument(IdentifierName(p.Identifier.Text)));
+                        // }
+                        // var paramArray = ArrayCreationExpression(
+                        //         ArrayType(PredefinedType(Token(SyntaxKind.ObjectKeyword).WithLeadingTrivia(Space)))
+                        //             .WithRankSpecifiers(SingletonList(ArrayRankSpecifier())))
+                        //     .WithInitializer(
+                        //         InitializerExpression(
+                        //             SyntaxKind.ArrayInitializerExpression,
+                        //             SeparatedList(
+                        //                 parameters.ToList()
+                        //                     .Select(p => (ExpressionSyntax)IdentifierName(p.Identifier.Text))
+                        //             )
+                        //         )
+                        //     );
+                        var paramArray = ArrayCreationExpression(
+                                ArrayType(PredefinedType(Token(SyntaxKind.ObjectKeyword).WithLeadingTrivia(Space)))
+                                    .WithRankSpecifiers(
+                                        SingletonList(ArrayRankSpecifier(
+                                            SingletonSeparatedList<ExpressionSyntax>(
+                                                OmittedArraySizeExpression())))))
+                            .WithInitializer(
+                                InitializerExpression(
+                                    SyntaxKind.ArrayInitializerExpression,
+                                    SeparatedList<ExpressionSyntax>(
+                                        parameters.Select(p =>
+                                            p.Modifiers.Any(SyntaxKind.OutKeyword)
+                                                ? (ExpressionSyntax)LiteralExpression(SyntaxKind.NullLiteralExpression)
+                                                : IdentifierName(p.Identifier.Text)
+                                        )
+                                    )
+                                )
+                            );
+
+                        var argsVarName = "args_" + CodeInjection.GetRandomVariableName();
+                        var argsVar = LocalDeclarationStatement(
+                            VariableDeclaration(IdentifierName("var").WithTrailingTrivia(Space))
+                                .WithVariables(
+                                    SingletonSeparatedList(
+                                        VariableDeclarator(argsVarName)
+                                            .WithInitializer(EqualsValueClause(paramArray))
+                                    )
+                                )
+                        );
+
+                        // var doooInvocation = InvocationExpression(
+                        //     IdentifierName("DOOO"),
+                        //     ArgumentList(
+                        //         SeparatedList([
+                        //             Argument(IdentifierName(delegateVarName)), // delegate
+                        //             Argument(IdentifierName("args")) // parameters
+                        //         ])
+                        //     )
+                        // );
+
+
+                        var invocation2 = MutantPlacer.MemoizationInstrumentationEngine
+                            .RetrieveMemoizationExpression2(
+                                memoizationIdentifier,
+                                UtilityFunctions.WrapInLambda(
+                                    MutantPlacer.MemoizationInstrumentationEngine.AnyActiveMutantsCheck(mutantIds,
+                                        context.Placer._injection)),
+                                IdentifierName(delegateVarName),
+                                IdentifierName(argsVarName),
+                                returnType,
+                                context.Placer._injection
+                            );
+
+
+                        var resultVarName = "result_" + CodeInjection.GetRandomVariableName();
+                        var resultVar = LocalDeclarationStatement(
+                            VariableDeclaration(method.ReturnType)
+                                .WithVariables(
+                                    SingletonSeparatedList(
+                                        VariableDeclarator(resultVarName)
+                                            .WithInitializer(
+                                                EqualsValueClause(
+                                                    CastExpression(method.ReturnType, invocation2)
+                                                )
+                                            )
+                                    )
+                                )
+                        );
+
+
+                        var statements =
+                            new List<StatementSyntax> { innerLocalFunction, localDeclaration, argsVar, resultVar };
+                        int index = 0;
+                        for (int i = 0; i < parameters.Count; i++)
+                        {
+                            var p = parameters[i];
+
+                            // Only out/ref parameters need reassignment
+                            if (p.Modifiers.Any(m =>
+                                    m.IsKind(SyntaxKind.OutKeyword) || m.IsKind(SyntaxKind.RefKeyword)))
+                            {
+                                statements.Add(
+                                    ExpressionStatement(
+                                        AssignmentExpression(
+                                            SyntaxKind.SimpleAssignmentExpression,
+                                            IdentifierName(p.Identifier.Text),
+                                            CastExpression(
+                                                p.Type,
+                                                ElementAccessExpression(
+                                                    IdentifierName(argsVarName),
+                                                    BracketedArgumentList(
+                                                        SingletonSeparatedList(
+                                                            Argument(LiteralExpression(
+                                                                SyntaxKind.NumericLiteralExpression, Literal(i)))
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                );
+                            }
+                        }
+
+                        var returnResult = ReturnStatement(IdentifierName(resultVarName)
+                            .WithLeadingTrivia(Space));
+
+                        var wrapperBody = Block(statements.Append(returnResult));
+                        // Console.WriteLine(wrapperBody.ToString());
+                        // var xxxx = wrapperBody;
+
+                        // if (method.Identifier.Text == "Test_2")
+                        // {
+                        //     Console.WriteLine(wrapperBody.ToString());
+                        //     Console.WriteLine(invocation2);
+                        // }
+
+                        // var blockBody2 = Block(ReturnStatement(invocation2.WithLeadingTrivia(Space)));
+                        blockBody = wrapperBody;
+                        NotMemoizedCollector.Add(ReasonType.None, MemoizationLevel.Method, "Memoization HAS been added",
+                            sourceNode);
+                    }
                 }
-            }
-
-
-            if (sourceNode is BaseMethodDeclarationSyntax mds)
-            {
-                string name = mds switch
-                {
-                    MethodDeclarationSyntax m => m.Identifier.Text // Normal method
-                    ,
-                    ConstructorDeclarationSyntax c => c.Identifier.Text // Constructor (class name)
-                    ,
-                    DestructorDeclarationSyntax d => d.Identifier.Text // Destructor (~ClassName)
-                    ,
-                    _ => ""
-                };
             }
 
             // do we need to change the body

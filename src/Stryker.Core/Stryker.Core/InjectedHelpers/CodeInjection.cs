@@ -23,6 +23,7 @@ public class CodeInjection
     private static readonly string Selector;
     private static readonly string AnyActiveSelector;
     private static readonly string MemoizationRetrieveSelector;
+    private static readonly string MemoizationRetrieveSelector2;
     private static readonly string MemoizationStoreSelector;
     private static readonly string MemoizationGenerateIdSelector;
 
@@ -47,6 +48,7 @@ public class CodeInjection
         }
         MemoizationRetrieveSelector = results2[0].Groups[1].Value;
         MemoizationGenerateIdSelector = results2[1].Groups[1].Value;
+        MemoizationRetrieveSelector2 = results2[2].Groups[1].Value;
 
     }
 
@@ -57,6 +59,7 @@ public class CodeInjection
         AnyActiveSelectorExpression = AnyActiveSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationRetrieveSelectorExpression = MemoizationRetrieveSelector.Replace(StrykerNamespace, HelperNamespace);
         MemoizationGenerateIdSelectorExpression = MemoizationGenerateIdSelector.Replace(StrykerNamespace, HelperNamespace);
+        MemoizationRetrieveSelectorExpression2 = MemoizationRetrieveSelector2.Replace(StrykerNamespace, HelperNamespace);
         // MemoizationStoreSelectorExpression = MemoizationStoreSelector.Replace(StrykerNamespace, HelperNamespace);
 
         foreach (var file in Files)
@@ -69,6 +72,7 @@ public class CodeInjection
     public string SelectorExpression { get; }
     public string AnyActiveSelectorExpression { get; }
     public string MemoizationRetrieveSelectorExpression { get; }
+    public string MemoizationRetrieveSelectorExpression2 { get; }
     public string MemoizationStoreSelectorExpression { get; }
     public string MemoizationGenerateIdSelectorExpression { get; }
     public string HelperNamespace { get; }
