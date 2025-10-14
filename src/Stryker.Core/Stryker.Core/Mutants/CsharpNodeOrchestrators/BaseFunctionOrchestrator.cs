@@ -267,6 +267,12 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 // var dfReadOutside = semanticModel.AnalyzeDataFlow(GetBodies(sourceNode).block).ReadOutside
                 //     .Where(n => n is ILocalSymbol).ToList();
 
+                INamedTypeSymbol? nts = null;
+                var symb = semanticModel.GetDeclaredSymbol(sourceNode)?.ContainingSymbol;
+                if (symb is INamedTypeSymbol symbol)
+                {
+                    nts = symbol;
+                }
                 if (hasAwaitExpressions || hasTaskInvocations)
                 {
                     NotMemoizedCollector.Add(ReasonType.UsesThreadingOrAsynchronousOperations, MemoizationLevel.Method,
@@ -302,7 +308,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 //         "Defined in value-typed parent, does not allow this access in lambdas",
                 //         sourceNode);
                 // }
-                else if (semanticModel.GetSymbolInfo(sourceNode).Symbol?.ContainingType is { IsValueType: true })
+                else if (nts?.IsValueType ?? false)
                 {
                     NotMemoizedCollector.Add(ReasonType.ParentIsValueType, MemoizationLevel.Method,
                         "Defined in value-typed parent, does not allow this access in lambdas",

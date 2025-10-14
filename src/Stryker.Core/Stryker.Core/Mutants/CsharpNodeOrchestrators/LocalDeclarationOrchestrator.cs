@@ -53,6 +53,16 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 return vdec;
             }
 
+            if (rhsExprOriginal is InitializerExpressionSyntax ies
+                && ies.IsKind(SyntaxKind.ArrayInitializerExpression))
+            {
+
+                rhsExprOriginal = ArrayCreationExpression(
+                    (ArrayTypeSyntax)declaredType,
+                    ies // The initializer from before
+                );
+            }
+
             if (rhsExprOriginal.DescendantNodesAndSelf().OfType<SwitchExpressionSyntax>().Any())
             {
                 NotMemoizedCollector.Add(ReasonType.SwitchExpressionInRightHandSide, MemoizationLevel.Expression,
