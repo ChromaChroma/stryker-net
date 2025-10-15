@@ -341,7 +341,158 @@ namespace Stryker
             {
                 return (T)func.DynamicInvoke(args);
             }
-            return (T)func.DynamicInvoke(args);
+            try
+            {
+                long timeTotal = 0,
+                    timeToCheckSerializibility = -1,
+                    timeToTryGetValue = -1,
+                    timeToDeserialize = -1,
+                    timeToSerialize = -1,
+                    timeToStore = -1;
+
+                var sw = new Stopwatch();
+
+                sw.Start();
+                var serializabilityStored = IsSerializableTypeDict
+                    .TryGetValue(typeof(T).FullName, out string isSerializable);
+                var typeIsSerializable = !(typeof(T).IsInterface || typeof(T).IsAbstract) && serializabilityStored &&
+                                         bool.Parse(isSerializable);
+
+
+                sw.Stop();
+                timeToCheckSerializibility = sw.ElapsedTicks;
+                timeTotal += timeToCheckSerializibility;
+
+                if (typeIsSerializable)
+                {
+                    sw.Restart();
+                    bool foundValue = MemoizationDict.TryGetValue(id, out var value);
+                    sw.Stop();
+                    timeToTryGetValue = sw.ElapsedTicks;
+                    timeTotal += timeToTryGetValue;
+
+                    if (foundValue)
+                    {
+                        sw.Restart();
+                        T? v = DoDeserialize<T>(value);
+                        sw.Stop();
+                        timeToDeserialize = sw.ElapsedTicks;
+                        timeTotal += timeToDeserialize;
+
+                        if (v != null)
+                        {
+                            T validationResult = (T)func.DynamicInvoke(args);;
+
+
+                            // var isInterface = typeof(T).IsInterface || typeof(T).IsAbstract;
+                            var isIEnumerable =
+                                typeof(T).GetInterfaces()
+                                    .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+                            if ((isIEnumerable && ((IEnumerable<T>)v).SequenceEqual((IEnumerable<T>)validationResult))
+                                || v.Equals(validationResult))
+                            {
+                                _memoizationData.Add((
+                                    id,
+                                    true,
+                                    timeTotal,
+                                    timeToCheckSerializibility,
+                                    timeToTryGetValue,
+                                    timeToDeserialize,
+                                    timeToSerialize,
+                                    timeToStore,
+                                    ""
+                                ));
+                                return v;
+                            }
+                            //
+                            // if (v.Equals(validationResult))
+                            // {
+                            //     _memoizationData.Add((
+                            //         id,
+                            //         true,
+                            //         timeTotal,
+                            //         timeToCheckSerializibility,
+                            //         timeToTryGetValue,
+                            //         timeToDeserialize,
+                            //         timeToSerialize,
+                            //         timeToStore,
+                            //         ""
+                            //     ));
+                            //     return v;
+                            // }
+                            else
+                            {
+                                _memoizationData.Add((
+                                    id,
+                                    true,
+                                    timeTotal,
+                                    timeToCheckSerializibility,
+                                    timeToTryGetValue,
+                                    timeToDeserialize,
+                                    timeToSerialize,
+                                    timeToStore,
+                                    $"Memoized Value not same as expected Computed Value. Memoization might not be possible. Memoized value: {v}. Computed value: {validationResult}"
+                                ));
+                                // Memoization not same value as expected
+                                return validationResult;
+                            }
+                        }
+                        else
+                        {
+                            // Catch possible multiple invoke and insets below if false ^
+                        }
+                    }
+                }
+
+                T result = (T)func.DynamicInvoke(args);;
+                // Assuming null is valid result, no assumption of invocated logic.
+                // then check if type is serializable (but maybe not in memoization). If not yet checked, Check if serializable
+                if (result == null || !serializabilityStored || typeIsSerializable)
+                {
+                    sw.Restart();
+                    var isSuccessfull = TrySerialize(result, out string serializedJson);
+                    sw.Stop();
+                    timeToSerialize = sw.ElapsedTicks;
+                    timeTotal += timeToSerialize;
+
+                    if (isSuccessfull)
+                    {
+                        sw.Restart();
+                        MemoizationDict.Add(id, serializedJson);
+                        sw.Stop();
+                        timeToStore = sw.ElapsedTicks;
+                        timeTotal += timeToStore;
+                    }
+                }
+
+                _memoizationData.Add((
+                    id,
+                    false,
+                    timeTotal,
+                    timeToCheckSerializibility,
+                    timeToTryGetValue,
+                    timeToDeserialize,
+                    timeToSerialize,
+                    timeToStore,
+                    ""
+                ));
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _memoizationData.Add((
+                    id,
+                    false,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    ex.ToString()
+                ));
+                return (T)func.DynamicInvoke(args);
+            }
         }
 
         private static System.Collections.Generic.IEnumerable<string> GetSerializableArgs(object[] args)
@@ -588,13 +739,15 @@ public class AllFieldsConverter : JsonConverter
     public class MmfLinkedListStringDictionary : MmfLinkedListStringDictionaryBase,
         System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string, string>>
     {
-        private const int DefaultByteDataCapacity = 1024 * 1024;
+        // private const long DefaultByteDataCapacity = 17_179_869_184; // 17.179.869.184 bytes = 17GB = 1024 * 1024 * 1024 * 16
+        private const long
+            DefaultByteDataCapacity = 179_869_184; // 17.179.869.184 bytes = 17GB = 1024 * 1024 * 1024 * 16
 
         public MmfLinkedListStringDictionary(string name,
             MemoryMappedFileAccess access = MemoryMappedFileAccess.ReadWrite,
             string memFile = "Memoization.data",
             string memPath = @"c:\.StrykData",
-            int byteDataCapacity = DefaultByteDataCapacity)
+            long byteDataCapacity = DefaultByteDataCapacity)
             : base(name, access, memFile, memPath, byteDataCapacity)
         {
         }
@@ -643,15 +796,15 @@ public class AllFieldsConverter : JsonConverter
             public uint Magic; // sanity check
             public int CurrentMapId; // active MMF id
             public int Version; // optional: can help clients detect updates
-            public int DataCapacity; // optional: can help clients detect updates
+            public long DataCapacity; // optional: can help clients detect updates
         }
 
         private readonly string _baseName; // base name of normal MMF
-        private readonly int _baseDataCapacity;
+        private readonly long _baseDataCapacity;
         public readonly MemoryMappedFile _controlMmf;
         public readonly MemoryMappedViewAccessor _controlAccessor;
 
-        protected VersionManagedMmfDataStructure(string baseName, int baseDataCapacity)
+        protected VersionManagedMmfDataStructure(string baseName, long baseDataCapacity)
         {
             _baseName = baseName;
             _baseDataCapacity = baseDataCapacity;
@@ -686,7 +839,7 @@ public class AllFieldsConverter : JsonConverter
             return header.Version;
         }
 
-        protected int GetNewestDataCapacity()
+        protected long GetNewestDataCapacity()
         {
             _controlAccessor.Read(0, out ControlMapHeaderMinimal header);
             return header.DataCapacity;
@@ -715,6 +868,74 @@ public class AllFieldsConverter : JsonConverter
 
         /// Call this method to validate if the version of the underlaying MMF is current. If not, update the MMF.
         protected abstract void ValidateVersionOfMmf();
+    }
+
+    public static class HashUtils32
+    {
+        public static uint MurmurHash3_x86_32(byte[] data, uint seed = 0)
+        {
+            const uint c1 = 0xcc9e2d51;
+            const uint c2 = 0x1b873593;
+
+            int length = data.Length;
+            int nblocks = length / 4;
+
+            uint h1 = seed;
+
+            // Body - process in 4-byte blocks
+            for (int i = 0; i < nblocks; i++)
+            {
+                int index = i * 4;
+                uint k1 = BitConverter.ToUInt32(data, index);
+
+                k1 *= c1;
+                k1 = Rotl32(k1, 15);
+                k1 *= c2;
+
+                h1 ^= k1;
+                h1 = Rotl32(h1, 13);
+                h1 = h1 * 5 + 0xe6546b64;
+            }
+
+            // Tail - remaining bytes
+            int tailIndex = nblocks * 4;
+            uint k2 = 0;
+
+            switch (length & 3)
+            {
+                case 3:
+                    k2 ^= (uint)data[tailIndex + 2] << 16;
+                    goto case 2;
+                case 2:
+                    k2 ^= (uint)data[tailIndex + 1] << 8;
+                    goto case 1;
+                case 1:
+                    k2 ^= data[tailIndex];
+                    k2 *= c1;
+                    k2 = Rotl32(k2, 15);
+                    k2 *= c2;
+                    h1 ^= k2;
+                    break;
+            }
+
+            // Finalization
+            h1 ^= (uint)length;
+            h1 = FMix(h1);
+
+            return h1;
+        }
+
+        private static uint Rotl32(uint x, int r) => (x << r) | (x >> (32 - r));
+
+        private static uint FMix(uint h)
+        {
+            h ^= h >> 16;
+            h *= 0x85ebca6b;
+            h ^= h >> 13;
+            h *= 0xc2b2ae35;
+            h ^= h >> 16;
+            return h;
+        }
     }
 
     public class MmfLinkedListStringDictionaryBase : VersionManagedMmfDataStructure
@@ -773,12 +994,17 @@ public class AllFieldsConverter : JsonConverter
         private readonly MemoryMappedFileAccess _mmfAccess;
         private readonly string _mmfName;
 
+        private readonly int _bucketTableOffset = Marshal.SizeOf<Header>();
+        private static readonly uint _numBuckets = 1_000_000; // A prime number
+        private readonly uint _bucketTableSize = _numBuckets * sizeof(int); // _numBuckets * sizeof(int)
+
+
         protected MmfLinkedListStringDictionaryBase(
             string name,
             MemoryMappedFileAccess access,
             string memFile,
             string memPath,
-            int byteDataCapacity)
+            long byteDataCapacity)
             : base(name, byteDataCapacity)
         {
             _mmfName = name;
@@ -801,8 +1027,15 @@ public class AllFieldsConverter : JsonConverter
             if (createdNew)
             {
                 // If Mmf is newly made, initialize its header
-                Header header = new Header { Magic = 0xCAFEBABE, version = 1, IsCurrent = true };
+                Header header = new Header
+                {
+                    Magic = 0xCAFEBABE, version = 1, IsCurrent = true, BytesUsed = _headerSize + _bucketTableSize
+                };
                 _accessor.Write(0, ref header);
+                for (int i = 0; i < _numBuckets; i++)
+                {
+                    _accessor.Write(_bucketTableOffset + i * sizeof(int), 0);
+                }
             }
         }
 
@@ -830,71 +1063,44 @@ public class AllFieldsConverter : JsonConverter
             if (!(_accessor.CanRead || _accessor.CanWrite))
                 throw new InvalidOperationException(
                     "Internal: MMF accessor is does not have the required Read/Write permissions.");
-            int currentPositionOffset = _headerSize;
 
-            while (true)
+            int bucketIndex =
+                (int)(HashUtils32.MurmurHash3_x86_32(System.Text.Encoding.UTF8.GetBytes(key)) % _numBuckets);
+            int bucketHeadOffset = _bucketTableOffset + bucketIndex * sizeof(int);
+
+            _accessor.Read(bucketHeadOffset, out int currentEntryOffset);
+
+            int offset = currentEntryOffset;
+            while (offset != 0)
             {
-                // LOGIC IF WE HANDLE DUPLICATE INSERTS/ADDS OF KEYS
-                // int keySize = _accessor.ReadInt32(currentPositionOffset + SizeOfKeyOffset);
-                // byte[] keyBytes = new byte[keySize];
-                // _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, keySize);
-                // string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
-                // if (key == entryKey)
-                // {
-                //     // TODO decide:
-                //     //  Overwrite, Overwrite is logical, but cannot in current array structure.
-                //     //  ignore,
-                //     //  throw exception? Since we dont expect an add, if key exists and is retrieved.
-                //     throw new ArgumentException("INTERNAL: An item with the same key has already been added.");
-                // }
+                _accessor.Read(offset, out EntryHeader eh);
+                // byte[] keyBytes = new byte[eh.SizeOfKey];
+                // _accessor.ReadArray(offset + KeyOffset, keyBytes, 0, eh.SizeOfKey);
+                // string existingKey = System.Text.Encoding.UTF8.GetString(keyBytes);
 
-                _accessor.Read(currentPositionOffset, out EntryHeader eh);
-
-                if (eh.Next is not 0) //not end of list
-                {
-                    currentPositionOffset = eh.Next;
-                    continue;
-                }
-
-                int newEntryPosition = currentPositionOffset;
-                if (eh.SizeOfKey != 0) // Check to determine if this is the first entry
-                {
-                    newEntryPosition += KeyOffset + eh.SizeOfKey + eh.SizeOfKey;
-                }
-
-                byte[] newKeyBytes = System.Text.Encoding.UTF8.GetBytes(key);
-                byte[] newValueBytes = System.Text.Encoding.UTF8.GetBytes(value);
-
-                if (newEntryPosition + _entryHeaderSize + newKeyBytes.Length + newValueBytes.Length >
-                    _accessor.Capacity)
-                {
-                    // Resize if Size of new entry exceeds current capacity of bytes
-                    throw new IndexOutOfRangeException("Backing MMF is too small");
-                    // Resize();
-                }
-
-                //Write new entry
-                _accessor.Write(newEntryPosition + NextOffset, 0);
-                _accessor.Write(newEntryPosition + SizeOfKeyOffset, newKeyBytes.Length);
-                _accessor.Write(newEntryPosition + SizeOfValueOffset, newValueBytes.Length);
-                _accessor.WriteArray(newEntryPosition + KeyOffset, newKeyBytes, 0, newKeyBytes.Length);
-                _accessor.WriteArray(newEntryPosition + KeyOffset + newKeyBytes.Length, newValueBytes, 0,
-                    newValueBytes.Length);
-
-                if (eh.SizeOfKey != 0)
-                {
-                    // update previous entry's next value
-                    _accessor.Write(currentPositionOffset + NextOffset, newEntryPosition);
-                }
-
-                _accessor.Read(0, out Header header);
-                header.BytesUsed =
-                    newEntryPosition + KeyOffset + newKeyBytes.Length + newValueBytes.Length; // End of inserted entry
-                _accessor.Write(0, ref header);
-
-
-                return;
+                offset = eh.Next;
             }
+
+            _accessor.Read(0, out Header header);
+            long newEntryOffset = header.BytesUsed;
+
+            byte[] newKeyBytes = System.Text.Encoding.UTF8.GetBytes(key);
+            byte[] newValueBytes = System.Text.Encoding.UTF8.GetBytes(value);
+
+
+            _accessor.Write(newEntryOffset + NextOffset, currentEntryOffset); // point to previous head
+            _accessor.Write(newEntryOffset + SizeOfKeyOffset, newKeyBytes.Length);
+            _accessor.Write(newEntryOffset + SizeOfValueOffset, newValueBytes.Length);
+            _accessor.WriteArray(newEntryOffset + KeyOffset, newKeyBytes, 0, newKeyBytes.Length);
+            _accessor.WriteArray(newEntryOffset + KeyOffset + newKeyBytes.Length, newValueBytes, 0,
+                newValueBytes.Length);
+
+            // Update bucket head to new entry
+            _accessor.Write(bucketHeadOffset, newEntryOffset);
+
+            // Update header
+            header.BytesUsed = newEntryOffset + KeyOffset + newKeyBytes.Length + newValueBytes.Length;
+            _accessor.Write(0, ref header);
         }
 
         protected bool TryGetValueInternal(string key, out string value)
@@ -904,30 +1110,29 @@ public class AllFieldsConverter : JsonConverter
                 throw new InvalidOperationException(
                     "Internal: MMF accessor is does not have the required Read/Write permissions.");
 
-            int currentPositionOffset = _headerSize;
-            while (true)
+            int bucketIndex =
+                (int)(HashUtils32.MurmurHash3_x86_32(System.Text.Encoding.UTF8.GetBytes(key)) % _numBuckets);
+            int bucketHeadOffset = _bucketTableOffset + bucketIndex * sizeof(int);
+
+            _accessor.Read(bucketHeadOffset, out int offset);
+
+            while (offset != 0)
             {
-                _accessor.Read(currentPositionOffset, out EntryHeader eh);
+                _accessor.Read(offset, out EntryHeader eh);
 
                 byte[] keyBytes = new byte[eh.SizeOfKey];
-                _accessor.ReadArray(currentPositionOffset + KeyOffset, keyBytes, 0, eh.SizeOfKey);
-                string entryKey = System.Text.Encoding.Default.GetString(keyBytes);
+                _accessor.ReadArray(offset + KeyOffset, keyBytes, 0, eh.SizeOfKey);
+                string entryKey = System.Text.Encoding.UTF8.GetString(keyBytes);
 
-                if (key == entryKey)
+                if (entryKey == key)
                 {
                     byte[] valueBytes = new byte[eh.SizeOfValue];
-                    _accessor.ReadArray(currentPositionOffset + KeyOffset + eh.SizeOfKey, valueBytes, 0,
-                        eh.SizeOfValue);
-                    value = System.Text.Encoding.Default.GetString(valueBytes);
+                    _accessor.ReadArray(offset + KeyOffset + eh.SizeOfKey, valueBytes, 0, eh.SizeOfValue);
+                    value = System.Text.Encoding.UTF8.GetString(valueBytes);
                     return true;
                 }
 
-                if (eh.Next is 0) // End of list
-                {
-                    break;
-                }
-
-                currentPositionOffset = eh.Next;
+                offset = eh.Next;
             }
 
             value = null;
@@ -968,4 +1173,84 @@ public class AllFieldsConverter : JsonConverter
             }
         }
     }
+
+// public static class HashUtils
+// {
+//     public static ulong MurmurHash3_x64_64(byte[] data, ulong seed = 0)
+//     {
+//         const ulong c1 = 0x87c37b91114253d5;
+//         const ulong c2 = 0x4cf5ad432745937f;
+//
+//         ulong h1 = seed;
+//         ulong h2 = seed;
+//
+//         int length = data.Length;
+//         int remainder = length & 15;
+//         int blocks = length >> 4;
+//
+//         // Body
+//         for (int i = 0; i < blocks; i++)
+//         {
+//             int index = i << 4;
+//
+//             ulong k1 = BitConverter.ToUInt64(data, index);
+//             ulong k2 = BitConverter.ToUInt64(data, index + 8);
+//
+//             k1 *= c1; k1 = Rotl64(k1, 31); k1 *= c2; h1 ^= k1;
+//             h1 = Rotl64(h1, 27); h1 += h2; h1 = h1 * 5 + 0x52dce729;
+//
+//             k2 *= c2; k2 = Rotl64(k2, 33); k2 *= c1; h2 ^= k2;
+//             h2 = Rotl64(h2, 31); h2 += h1; h2 = h2 * 5 + 0x38495ab5;
+//         }
+//
+//         // Tail
+//         ulong tk1 = 0;
+//         ulong tk2 = 0;
+//
+//         switch (remainder)
+//         {
+//             case 15: tk2 ^= (ulong)data[length - 15] << 48; goto case 14;
+//             case 14: tk2 ^= (ulong)data[length - 14] << 40; goto case 13;
+//             case 13: tk2 ^= (ulong)data[length - 13] << 32; goto case 12;
+//             case 12: tk2 ^= (ulong)data[length - 12] << 24; goto case 11;
+//             case 11: tk2 ^= (ulong)data[length - 11] << 16; goto case 10;
+//             case 10: tk2 ^= (ulong)data[length - 10] << 8; goto case 9;
+//             case 9: tk2 ^= (ulong)data[length - 9]; tk2 *= c2; tk2 = Rotl64(tk2, 33); tk2 *= c1; h2 ^= tk2; break;
+//             case 8: tk1 ^= (ulong)data[length - 8]; goto case 7;
+//             case 7: tk1 ^= (ulong)data[length - 7] << 48; goto case 6;
+//             case 6: tk1 ^= (ulong)data[length - 6] << 40; goto case 5;
+//             case 5: tk1 ^= (ulong)data[length - 5] << 32; goto case 4;
+//             case 4: tk1 ^= (ulong)data[length - 4] << 24; goto case 3;
+//             case 3: tk1 ^= (ulong)data[length - 3] << 16; goto case 2;
+//             case 2: tk1 ^= (ulong)data[length - 2] << 8; goto case 1;
+//             case 1: tk1 ^= (ulong)data[length - 1]; tk1 *= c1; tk1 = Rotl64(tk1, 31); tk1 *= c2; h1 ^= tk1; break;
+//         }
+//
+//         // Finalization
+//         h1 ^= (ulong)length;
+//         h2 ^= (ulong)length;
+//
+//         h1 += h2;
+//         h2 += h1;
+//
+//         h1 = FMix(h1);
+//         h2 = FMix(h2);
+//
+//         h1 += h2;
+//
+//         return h1; // 64-bit hash
+//     }
+//
+//     private static ulong Rotl64(ulong x, int r) => (x << r) | (x >> (64 - r));
+//
+//     private static ulong FMix(ulong k)
+//     {
+//         k ^= k >> 33;
+//         k *= 0xff51afd7ed558ccd;
+//         k ^= k >> 33;
+//         k *= 0xc4ceb9fe1a85ec53;
+//         k ^= k >> 33;
+//         return k;
+//     }
+// }
 }
