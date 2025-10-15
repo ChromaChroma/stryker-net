@@ -72,7 +72,7 @@ public class UtilityFunctions
         var n = vds.FirstAncestorOrSelf<BaseMethodDeclarationSyntax>();
         if (n is null) return null;
         return $"{vds.SyntaxTree.GetLineSpan(vds.Span).StartLinePosition}__" +
-               $"{MemoizationInstrumentationEngine.GetFullMethodSignature(n, semanticModel)}__RETURN";
+               $"{MemoizationInstrumentationEngine.GetFullMethodSignature(n, semanticModel)}_";
 
         return $"{vds.SyntaxTree.GetLineSpan(vds.Span).StartLinePosition}" +
                $"__" +
