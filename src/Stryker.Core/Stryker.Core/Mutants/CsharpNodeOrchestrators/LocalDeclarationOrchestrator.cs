@@ -37,6 +37,16 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             return targetNode;
         }
 
+
+        if (sourceNode.Declaration.Type is RefTypeSyntax refTypeSyntax)
+        {
+
+            NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Expression,
+                "Expression is ref type", sourceNode);
+            return targetNode;
+        }
+
+
         var sourceNodeContainingType = semanticModel.GetEnclosingSymbol(sourceNode.SpanStart)?.ContainingType;
 
         var engine = MutantPlacer.MemoizationInstrumentationEngine;
@@ -46,6 +56,11 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             var originalVdec = vds.Variables
                 .First(v => v.Identifier.ValueText == vdec.Identifier.ValueText);
             var rhsExprOriginal = originalVdec.Initializer?.Value;
+
+            // if (originalVdec.Identifier.ValueText == "enumMemberValue")
+            // {
+            //     Console.WriteLine();
+            // }
 
             if (rhsExprOriginal == null || vdec.Initializer == null)
             {
@@ -131,11 +146,20 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
 
             var hasRefTypes = (analyzedIdentifiers ?? []).Any(s => s switch
             {
-                ILocalSymbol local => local.Type.IsRefLikeType,
-                IParameterSymbol param => param.Type.IsRefLikeType || param.RefKind == RefKind.RefReadOnly,
+                ILocalSymbol local => local.Type.IsRefLikeType || local.IsRef,
+                IParameterSymbol param => param.RefKind == RefKind.Ref
+                                          || param.RefKind == RefKind.RefReadOnly
+                                          || param.Type.IsRefLikeType ,
                 IFieldSymbol field => field.Type.IsRefLikeType,
                 _ => false,
             });
+
+            // var type = semanticModel.GetTypeInfo(rhsExprOriginal).Type;
+            // if (type?.IsRefLikeType == true)
+            // {
+            //     Console.WriteLine();
+            //     hasRefTypes = true;
+            // }
 
 
             if (hasRefTypes)

@@ -42,7 +42,8 @@ public enum ReasonType
     DynamicILGeneration,
     NoImplementation,
     SwitchExpressionInRightHandSide,
-    ParentIsValueType
+    ParentIsValueType,
+    ExtensionMethod
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

@@ -166,10 +166,21 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
         var outParams = parameters.Where(p => p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword)))
             .ToList();
-        var refParams = parameters.Where(p => p.Modifiers.Any(m => m.IsKind(SyntaxKind.RefKeyword)))
+        var refParams = parameters
+            .Where(p => p.Modifiers.Any(m => m.IsKind(SyntaxKind.RefKeyword)))
             .ToList();
+        if (sourceNode is BaseMethodDeclarationSyntax)
+        {
+            refParams = refParams.Concat(parameters
+                    .Where(p => semanticModel.GetTypeInfo(p?.Type).Type is INamedTypeSymbol { IsRefLikeType: true }))
+                .ToList();
+        }
         var inParams = parameters.Where(p => !p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword)))
             .ToList();
+        // if (parameters.Any(p => semanticModel.GetTypeInfo(p.Type).Type is INamedTypeSymbol { IsRefLikeType: true }))
+        // {
+        //     Console.WriteLine();
+        // }
 
 
         // no mutations to inject
@@ -209,6 +220,11 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             {
                 NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
                     "Method has uses yield keyword", sourceNode);
+            }
+            else if (parameters.Any(p => p.Modifiers.Any(SyntaxKind.ThisKeyword)))
+            {
+                NotMemoizedCollector.Add(ReasonType.ExtensionMethod, MemoizationLevel.Method,
+                    "Method is extention method", sourceNode);
             }
             else if (outParams.Count > 0)
             {
