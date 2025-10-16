@@ -170,6 +170,22 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 return vdec;
             }
 
+            if (ContainsLinqQuery(originalVdec.Initializer.Value))
+            {
+                NotMemoizedCollector.Add(ReasonType.ContainsLinqQuery, MemoizationLevel.Expression,
+                    "Expression contains old school style linq queries.", sourceNode);
+                return vdec;
+
+            }
+
+            if (ContainsRefOutIn(semanticModel, originalVdec.Initializer.Value))
+            {
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Expression,
+                    "Expression is or uses ref, in and/or out parameters/types", sourceNode);
+                return vdec;
+
+            }
+
 
             var variablesRead = ExternalVariableUsageAnalyser
                 .GetExternalFieldReads(originalVdec.Initializer.Value, semanticModel).ToList();
@@ -264,5 +280,78 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
 
         var declaration = VariableDeclaration(vdsMutated.Type).WithVariables(SeparatedList(declarators));
         return LocalDeclarationStatement(declaration);
+    }
+    public static bool ContainsLinqQuery(ExpressionSyntax expression)
+    {
+        if (expression == null)
+            return false;
+
+        // Check if this expression or any descendant node is a query expression
+        return expression
+            .DescendantNodesAndSelf()
+            .OfType<QueryExpressionSyntax>()
+            .Any();
+    }
+    public static bool ContainsRefOutIn(SemanticModel semanticModel, ExpressionSyntax expression)
+    {
+        // 🧠 Check if any expression evaluates to a ref-like type (ref struct)
+        var typeInfo = semanticModel.GetTypeInfo(expression);
+        var typeSymbol = typeInfo.Type;
+
+        if (typeSymbol is ITypeSymbol t && t.IsRefLikeType)
+        {
+            return true;
+        }
+
+        // Walk through all descendant nodes, including the root expression itself
+        foreach (var node in expression.DescendantNodesAndSelf())
+        {
+            // 🧠 Check method calls
+            if (node is InvocationExpressionSyntax invocation)
+            {
+                foreach (var arg in invocation.ArgumentList.Arguments)
+                {
+                    // Syntax check for explicit ref/out/in
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.RefKeyword) ||
+                        arg.RefKindKeyword.IsKind(SyntaxKind.OutKeyword) ||
+                        arg.RefKindKeyword.IsKind(SyntaxKind.InKeyword))
+                    {
+                        return true;
+                    }
+
+                    // Optional semantic check (to detect parameters that are ref/out/in by signature)
+                    var argSymbol = semanticModel.GetSymbolInfo(invocation.Expression).Symbol as IMethodSymbol;
+                    if (argSymbol != null)
+                    {
+                        var parameters = argSymbol.Parameters;
+                        var index = invocation.ArgumentList.Arguments.IndexOf(arg);
+                        if (index >= 0 && index < parameters.Length)
+                        {
+                            var refKind = parameters[index].RefKind;
+                            if (refKind == RefKind.Ref || refKind == RefKind.Out || refKind == RefKind.In)
+                                return true;
+                        }
+                    }
+                }
+            }
+
+            // 🧠 Optionally: Check identifiers or variable usage
+            if (node is IdentifierNameSyntax identifier)
+            {
+                var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
+                if (symbol is IParameterSymbol paramSymbol)
+                {
+                    if (paramSymbol.RefKind is RefKind.Ref or RefKind.Out or RefKind.In)
+                        return true;
+                }
+                else if (symbol is ILocalSymbol localSymbol)
+                {
+                    if (localSymbol.RefKind is RefKind.Ref or RefKind.Out or RefKind.In)
+                        return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

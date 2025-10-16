@@ -43,7 +43,8 @@ public enum ReasonType
     NoImplementation,
     SwitchExpressionInRightHandSide,
     ParentIsValueType,
-    ExtensionMethod
+    ExtensionMethod,
+    ContainsLinqQuery
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

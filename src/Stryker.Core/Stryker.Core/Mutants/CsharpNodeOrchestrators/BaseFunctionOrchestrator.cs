@@ -236,6 +236,11 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                 NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
                     "Method has uses ref parameters", sourceNode);
             }
+            else if (ContainsRefOutIn(semanticModel, sourceNode))
+            {
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+                    "Method uses ref, out or in in method body", sourceNode);
+            }
             else if (methodReturnMemoizationId != null) //Assuming Stryker will not inject Yields
             {
                 // Input: (in)Params, other variables,
@@ -475,5 +480,62 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
 
         // Join the parts with dots to form the fully qualified name
         return string.Join("::", nameParts.Where(part => !string.IsNullOrEmpty(part)).Distinct());
+    }
+
+    public static bool ContainsRefOutIn<T>(SemanticModel semanticModel, T functionSyntax)
+        where T : SyntaxNode
+    {
+        if (functionSyntax == null)
+            return false;
+
+        // Walk all descendant expressions within this function-like syntax
+        var expressions = functionSyntax
+            .DescendantNodes()
+            .OfType<ExpressionSyntax>();
+
+        foreach (var expression in expressions)
+        {
+            // 1️⃣ Check if the expression’s type is a ref-like type
+            var typeInfo = semanticModel.GetTypeInfo(expression);
+            if (typeInfo.Type?.IsRefLikeType == true)
+                return true;
+
+            // 2️⃣ Check invocation arguments for ref/out/in
+            foreach (var invocation in expression.DescendantNodesAndSelf().OfType<InvocationExpressionSyntax>())
+            {
+                foreach (var arg in invocation.ArgumentList.Arguments)
+                {
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.RefKeyword) ||
+                        arg.RefKindKeyword.IsKind(SyntaxKind.OutKeyword) ||
+                        arg.RefKindKeyword.IsKind(SyntaxKind.InKeyword))
+                        return true;
+
+                    // Semantic check (parameter ref kind)
+                    if (semanticModel.GetSymbolInfo(invocation.Expression).Symbol is IMethodSymbol method)
+                    {
+                        var parameters = method.Parameters;
+                        var index = invocation.ArgumentList.Arguments.IndexOf(arg);
+                        if (index >= 0 && index < parameters.Length)
+                        {
+                            var refKind = parameters[index].RefKind;
+                            if (refKind is RefKind.Ref or RefKind.Out or RefKind.In)
+                                return true;
+                        }
+                    }
+                }
+            }
+
+            // 3️⃣ Check identifiers referencing ref/out/in variables
+            foreach (var identifier in expression.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>())
+            {
+                var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
+                if (symbol is IParameterSymbol { RefKind: RefKind.Ref or RefKind.Out or RefKind.In })
+                    return true;
+                if (symbol is ILocalSymbol { RefKind: RefKind.Ref or RefKind.Out or RefKind.In })
+                    return true;
+            }
+        }
+
+        return false;
     }
 }
