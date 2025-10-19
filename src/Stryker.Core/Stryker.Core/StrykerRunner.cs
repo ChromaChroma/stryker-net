@@ -7,6 +7,7 @@ using System.Linq;
 using Microsoft.Extensions.Logging;
 using Stryker.Abstractions;
 using Stryker.Abstractions.Exceptions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Options;
 using Stryker.Abstractions.ProjectComponents;
 using Stryker.Core.Initialisation;
@@ -61,24 +62,39 @@ public class StrykerRunner : IStrykerRunner
 
         try
         {
+            var sw = new Stopwatch();
+            sw.Start();
             // Mutate
             _mutationTestProcesses = projectOrchestrator.MutateProjects(options, reporters).ToList();
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "MutateProjects");
+
+
 
             var rootComponent = AddRootFolderIfMultiProject(_mutationTestProcesses.Select(x => x.Input.SourceProjectInfo.ProjectContents).ToList(), options);
             var combinedTestProjectsInfo = _mutationTestProcesses.Select(mtp => mtp.Input.TestProjectsInfo).Aggregate((a, b) => (TestProjectsInfo)a + (TestProjectsInfo)b);
 
             _logger.LogInformation("{MutantsCount} mutants created", rootComponent.Mutants.Count());
 
+            sw.Restart();
             AnalyzeCoverage(options);
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "AnalyzeCoverage");
 
+            sw.Restart();
             // Filter
             foreach (var project in _mutationTestProcesses)
             {
                 project.FilterMutants();
             }
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "FilterMutants");
 
+            sw.Restart();
             // Report
             reporters.OnMutantsCreated(rootComponent, combinedTestProjectsInfo);
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "OnMutantsCreated");
 
             var allMutants = rootComponent.Mutants.ToList();
             var mutantsNotRun = rootComponent.NotRunMutants().ToList();
@@ -102,22 +118,37 @@ public class StrykerRunner : IStrykerRunner
                     _logger.LogWarning("It\'s a mutant-free world, nothing to test.");
                 }
 
+                MemoizationTimingCollector.MutationScore = rootComponent.GetMutationScore();
+
+                sw.Restart();
                 reporters.OnAllMutantsTested(rootComponent, combinedTestProjectsInfo);
+                sw.Stop();
+                MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "OnAllMutantsTested");
                 if (disposeOrchestrator)
                 {
                     projectOrchestrator.Dispose();
                 }
-                return new StrykerRunResult(options, rootComponent.GetMutationScore());
+
+                var resInner = new StrykerRunResult(options, rootComponent.GetMutationScore());
+                MemoizationTimingCollector.MutationScore = resInner.MutationScore;
+                return resInner;
             }
 
+            sw.Restart();
             // Report
             reporters.OnStartMutantTestRun(mutantsNotRun);
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "OnStartMutantTestRun");
 
+            sw.Restart();
             // Test
             foreach (var project in _mutationTestProcesses)
             {
                 project.Test(project.Input.SourceProjectInfo.ProjectContents.Mutants.Where(x => x.ResultStatus == MutantStatus.Pending).ToList());
             }
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "TestMutatedProjects");
+
             // dispose and stop runners
             if (disposeOrchestrator)
             {
@@ -129,10 +160,16 @@ public class StrykerRunner : IStrykerRunner
                 project.Restore();
             }
 
+            MemoizationTimingCollector.MutationScore = rootComponent.GetMutationScore();
+
+            sw.Restart();
             reporters.OnAllMutantsTested(rootComponent, combinedTestProjectsInfo);
+            sw.Stop();
+            MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "OnAllMutantsTested");
 
-
-            return new StrykerRunResult(options, rootComponent.GetMutationScore());
+            var res = new StrykerRunResult(options, rootComponent.GetMutationScore());
+            MemoizationTimingCollector.MutationScore = res.MutationScore;
+            return res;
         }
 #if !DEBUG
         catch (Exception ex) when (!(ex is InputException))
@@ -147,6 +184,7 @@ public class StrykerRunner : IStrykerRunner
         {
             // log duration
             stopwatch.Stop();
+            MemoizationTimingCollector.Add(stopwatch.ElapsedMilliseconds, "TotalRun");
             _logger.LogInformation("Time Elapsed {duration}", stopwatch.Elapsed);
         }
     }

@@ -4,7 +4,7 @@
     <RootNamespace>Stryker.CLI</RootNamespace>
     <AssemblyName>Stryker.CLI</AssemblyName>
     <OutputType>Exe</OutputType>
-    <PackAsTool>true</PackAsTool>
+    <PackAsTool>false</PackAsTool>
     <ToolCommandName>dotnet-stryker</ToolCommandName>
   </PropertyGroup>
 
@@ -26,7 +26,7 @@
   <PropertyGroup>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
-  
+
   <ItemGroup>
     <PackageReference Include="McMaster.Extensions.CommandLineUtils" />
     <PackageReference Include="NuGet.Protocol" />

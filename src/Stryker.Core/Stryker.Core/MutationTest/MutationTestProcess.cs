@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Stryker.Abstractions;
 using Stryker.Abstractions.Exceptions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Options;
 using Stryker.Abstractions.ProjectComponents;
 using Stryker.Abstractions.Reporting;
 using Stryker.Abstractions.Testing;
 using Stryker.Core.CoverageAnalysis;
+using Stryker.Core.Memoization;
 using Stryker.TestRunner.Tests;
 using Stryker.Utilities.Buildalyzer;
 using Stryker.Utilities.Logging;
@@ -101,12 +104,15 @@ public class MutationTestProcess : IMutationTestProcess
 
     public void Restore() => Input.TestProjectsInfo.RestoreOriginalAssembly(Input.SourceProjectInfo.AnalyzerResult);
 
+    private MetricDataCollection _metricDataCollection = new();
     private void TestMutants(IEnumerable<IMutant> mutantsToTest)
     {
         var mutantGroups = BuildMutantGroupsForTest(mutantsToTest.ToList());
 
         var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = _options.Concurrency };
 
+        var sw = new Stopwatch();
+        sw.Start();
         Parallel.ForEach(mutantGroups, parallelOptions, mutants =>
         {
             var reportedMutants = new HashSet<IMutant>();
@@ -118,6 +124,9 @@ public class MutationTestProcess : IMutationTestProcess
 
             OnMutantsTested(mutants, reportedMutants);
         });
+        sw.Stop();
+        MemoizationTimingCollector.Add(sw.ElapsedMilliseconds, "ParallelForEach::MutantGroups");
+        _reporter?.OnMutantsOfProjectTested(_metricDataCollection);
     }
 
     private bool TestUpdateHandler(IEnumerable<IMutant> testedMutants, ITestIdentifiers failedTests, ITestIdentifiers ranTests,

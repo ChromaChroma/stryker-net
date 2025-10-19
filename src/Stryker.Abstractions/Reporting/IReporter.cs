@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.ProjectComponents;
 
 namespace Stryker.Abstractions.Reporting;
@@ -13,4 +14,10 @@ public interface IReporter
     void OnMutantTested(IReadOnlyMutant result);
     // Will get called when all mutations have been tested
     void OnAllMutantsTested(IReadOnlyProjectComponent reportComponent, ITestProjectsInfo testProjectsInfo);
+
+    // Custom Extra lifecycle step for memoization data collection
+    void OnMutantsOfProjectTested(IMetricDataCollection collector)
+    {
+        // Does nothing by default
+    }
 }

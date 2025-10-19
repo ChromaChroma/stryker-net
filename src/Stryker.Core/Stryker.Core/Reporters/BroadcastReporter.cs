@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Stryker.Abstractions;
+using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.ProjectComponents;
 using Stryker.Abstractions.Reporting;
 
@@ -19,6 +20,13 @@ public class BroadcastReporter : IReporter
 
     public BroadcastReporter(IEnumerable<IReporter> reporters) => Reporters = reporters;
 
+    public void OnMutantsOfProjectTested(IMetricDataCollection collector)
+    {
+        foreach (var reporter in Reporters)
+        {
+            reporter.OnMutantsOfProjectTested(collector);
+        }
+    }
     public void OnMutantsCreated(IReadOnlyProjectComponent reportComponent, ITestProjectsInfo testProjectsInfo)
     {
         foreach (var reporter in Reporters)
