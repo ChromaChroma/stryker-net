@@ -74,11 +74,16 @@ public class StrykerRunner : IStrykerRunner
             var combinedTestProjectsInfo = _mutationTestProcesses.Select(mtp => mtp.Input.TestProjectsInfo).Aggregate((a, b) => (TestProjectsInfo)a + (TestProjectsInfo)b);
 
             _logger.LogInformation("{MutantsCount} mutants created", rootComponent.Mutants.Count());
-            _logger.LogInformation("{NrMemoized} Opportunities Memoized",
-                NotMemoizedCollector.Reasons.Count(r => r.Type == ReasonType.None)
+
+            _logger.LogInformation("{NrMemoized} Opportunities Memoized M:{M}, E:{E}",
+                NotMemoizedCollector.Reasons.Count(r => r.Type == ReasonType.None),
+            NotMemoizedCollector.Reasons.Count(r => r is { Type: ReasonType.None, MemoizationLevel: MemoizationLevel.Method }),
+            NotMemoizedCollector.Reasons.Count(r => r is { Type: ReasonType.None, MemoizationLevel: MemoizationLevel.Expression })
             );
-            _logger.LogInformation("{NrNotMemoized} Opportunities Not Able To Be Memoized",
-                NotMemoizedCollector.Reasons.Count(r => r.Type != ReasonType.None)
+            _logger.LogInformation("{NrNotMemoized} Opportunities Not Able To Be Memoized M:{M}, E:{E}",
+                NotMemoizedCollector.Reasons.Count(r => r.Type != ReasonType.None),
+            NotMemoizedCollector.Reasons.Count(r => r is { Type: ReasonType.None, MemoizationLevel: MemoizationLevel.Method }),
+            NotMemoizedCollector.Reasons.Count(r => r is { Type: ReasonType.None, MemoizationLevel: MemoizationLevel.Expression })
             );
 
             sw.Restart();

@@ -115,6 +115,21 @@ namespace Stryker
                     timeToDeserialize = -1,
                     timeToSerialize = -1,
                     timeToStore = -1;
+                if (id[id.Length - 1] == '無') // Checks for non-serializable args in input args)
+                {
+                    _memoizationData.Add((
+                        id,
+                        false,
+                        timeTotal,
+                        timeToCheckSerializibility,
+                        timeToTryGetValue,
+                        timeToDeserialize,
+                        timeToSerialize,
+                        timeToStore,
+                        "無"
+                    ));
+                    return func();
+                }
 
                 var sw = new Stopwatch();
 
@@ -255,7 +270,8 @@ namespace Stryker
                     -1,
                     -1,
                     -1,
-                    ex.Message + "   " + ex.StackTrace + " " + ex.Source
+                    "Exception"
+                    // ex.Message + "   " + ex.StackTrace + " " + ex.Source
                 ));
                 return func();
             }
@@ -357,7 +373,7 @@ namespace Stryker
                     // Else ignoreOR return a placeholder "non-serializable"? This at least keeps order of args.
                     else
                     {
-                        acc.Add("|non-serializable|");
+                        return ["無"];
                     }
                 }
             }

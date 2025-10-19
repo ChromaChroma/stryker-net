@@ -12,8 +12,8 @@ public struct MetricData(
     long timeToStore,
     string memoValueNotEqualToComputedMessage)
 {
-    public string Identifier { get; } = identifier;
-    public string StringifiedArguments { get; } = stringifiedArguments;
+    public string Identifier { get; set; } = identifier;
+    public string StringifiedArguments { get; set; } = stringifiedArguments;
     public bool IsMemoHit { get; } = isMemoHit;
     public long TimeTotal { get; } = timeTotal;
     public long TimeToCheckSerializibility { get; } = timeToCheckSerializibility;
