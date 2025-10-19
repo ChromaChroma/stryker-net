@@ -41,8 +41,8 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
         if (sourceNode.Declaration.Type is RefTypeSyntax refTypeSyntax)
         {
 
-            NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Expression,
-                "Expression is ref type", sourceNode);
+            NotMemoizedCollector.Add(ReasonType.IllegalModifiersRef, MemoizationLevel.Expression,
+                "ref type", sourceNode);
             return targetNode;
         }
 
@@ -123,8 +123,9 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 if (IsExternalInvocation(inv, semanticModel))
                 {
                     NotMemoizedCollector.Add(ReasonType.UsesExternalLibrariesOrAPIs, MemoizationLevel.Expression,
-                        "Uses external api calls that cannot be confirmed to be side-effect free: " + inv.ToString(),
+                        "Uses external api calls that cannot be confirmed to be side-effect free. ",
                         sourceNode);
+                    return vdec;
                 }
             }
 
@@ -165,7 +166,7 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             if (hasRefTypes)
             {
                 // Disallow ref types due to not being allowed in lambdas, return original
-                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Expression,
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiersRef, MemoizationLevel.Expression,
                     "Expression has uses ref parameters", sourceNode);
                 return vdec;
             }
@@ -178,10 +179,12 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
 
             }
 
-            if (ContainsRefOutIn(semanticModel, originalVdec.Initializer.Value))
+            var (containsIllegalKeyword, keywordTypeReason) =
+                ContainsRefOutIn(semanticModel, originalVdec.Initializer.Value);
+            if (containsIllegalKeyword)
             {
-                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Expression,
-                    "Expression is or uses ref, in and/or out parameters/types", sourceNode);
+                NotMemoizedCollector.Add(keywordTypeReason, MemoizationLevel.Expression,
+                    "Illegal keyword", sourceNode);
                 return vdec;
 
             }
@@ -275,6 +278,8 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                 injection
             );
             var newVdec = InjectStatementMemoization(vdec, invocation, targetNode, injection);
+            NotMemoizedCollector.Add(ReasonType.None, MemoizationLevel.Method, "Added",
+                sourceNode);
             return newVdec;
         });
 
@@ -292,7 +297,7 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             .OfType<QueryExpressionSyntax>()
             .Any();
     }
-    public static bool ContainsRefOutIn(SemanticModel semanticModel, ExpressionSyntax expression)
+    public static (bool, ReasonType IllegalModifiersIn) ContainsRefOutIn(SemanticModel semanticModel, ExpressionSyntax expression)
     {
         // 🧠 Check if any expression evaluates to a ref-like type (ref struct)
         var typeInfo = semanticModel.GetTypeInfo(expression);
@@ -300,7 +305,7 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
 
         if (typeSymbol is ITypeSymbol t && t.IsRefLikeType)
         {
-            return true;
+            return (true, ReasonType.IllegalModifiersRef);
         }
 
         // Walk through all descendant nodes, including the root expression itself
@@ -311,13 +316,14 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             {
                 foreach (var arg in invocation.ArgumentList.Arguments)
                 {
-                    // Syntax check for explicit ref/out/in
-                    if (arg.RefKindKeyword.IsKind(SyntaxKind.RefKeyword) ||
-                        arg.RefKindKeyword.IsKind(SyntaxKind.OutKeyword) ||
-                        arg.RefKindKeyword.IsKind(SyntaxKind.InKeyword))
-                    {
-                        return true;
-                    }
+
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.RefKeyword))
+                        return (true, ReasonType.IllegalModifiersRef);
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.OutKeyword))
+                        return (true, ReasonType.IllegalModifiersOut);
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.InKeyword))
+                        return (true, ReasonType.IllegalModifiersIn);
+
 
                     // Optional semantic check (to detect parameters that are ref/out/in by signature)
                     var argSymbol = semanticModel.GetSymbolInfo(invocation.Expression).Symbol as IMethodSymbol;
@@ -328,8 +334,13 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
                         if (index >= 0 && index < parameters.Length)
                         {
                             var refKind = parameters[index].RefKind;
-                            if (refKind == RefKind.Ref || refKind == RefKind.Out || refKind == RefKind.In)
-                                return true;
+
+                            if (refKind is RefKind.Ref )
+                                return (true, ReasonType.IllegalModifiersRef);
+                            if (refKind is RefKind.Out )
+                                return (true, ReasonType.IllegalModifiersOut);
+                            if (refKind is RefKind.In )
+                                return (true, ReasonType.IllegalModifiersIn);
                         }
                     }
                 }
@@ -339,19 +350,23 @@ internal class LocalDeclarationOrchestrator : StatementSpecificOrchestrator<Loca
             if (node is IdentifierNameSyntax identifier)
             {
                 var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
-                if (symbol is IParameterSymbol paramSymbol)
-                {
-                    if (paramSymbol.RefKind is RefKind.Ref or RefKind.Out or RefKind.In)
-                        return true;
-                }
-                else if (symbol is ILocalSymbol localSymbol)
-                {
-                    if (localSymbol.RefKind is RefKind.Ref or RefKind.Out or RefKind.In)
-                        return true;
-                }
+
+                if (symbol is IParameterSymbol { RefKind: RefKind.Ref})
+                    return (true, ReasonType.IllegalModifiersRef);
+                if (symbol is IParameterSymbol { RefKind: RefKind.Out})
+                    return (true, ReasonType.IllegalModifiersOut);
+                if (symbol is IParameterSymbol { RefKind: RefKind.In})
+                    return (true, ReasonType.IllegalModifiersIn);
+
+                if (symbol is ILocalSymbol { RefKind: RefKind.Ref})
+                    return (true, ReasonType.IllegalModifiersRef);
+                if (symbol is ILocalSymbol { RefKind: RefKind.Out})
+                    return (true, ReasonType.IllegalModifiersOut);
+                if (symbol is ILocalSymbol { RefKind: RefKind.In})
+                    return (true, ReasonType.IllegalModifiersIn);
             }
         }
 
-        return false;
+        return (false, ReasonType.None);
     }
 }

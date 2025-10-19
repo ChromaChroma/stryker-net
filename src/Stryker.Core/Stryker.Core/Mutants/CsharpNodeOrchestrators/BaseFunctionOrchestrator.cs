@@ -210,6 +210,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                   $"{MemoizationInstrumentationEngine.GetFullMethodSignature(methodDeclarationSyntax, semanticModel)}__RETURN"
                 : null;
 
+            var (containsIllegalKeyword, keywordTypeReason) = ContainsRefOutIn(semanticModel, sourceNode);
 
             if (returnType.IsVoid())
             {
@@ -218,7 +219,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             }
             else if (sourceNode.DescendantNodes().OfType<YieldStatementSyntax>().Any())
             {
-                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiersYield, MemoizationLevel.Method,
                     "Method has uses yield keyword", sourceNode);
             }
             else if (parameters.Any(p => p.Modifiers.Any(SyntaxKind.ThisKeyword)))
@@ -228,18 +229,18 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             }
             else if (outParams.Count > 0)
             {
-                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiersOut, MemoizationLevel.Method,
                     "Method has uses out parameters", sourceNode);
             }
             else if (refParams.Count > 0)
             {
-                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
+                NotMemoizedCollector.Add(ReasonType.IllegalModifiersRef, MemoizationLevel.Method,
                     "Method has uses ref parameters", sourceNode);
             }
-            else if (ContainsRefOutIn(semanticModel, sourceNode))
+            else if (containsIllegalKeyword)
             {
-                NotMemoizedCollector.Add(ReasonType.IllegalModifiers, MemoizationLevel.Method,
-                    "Method uses ref, out or in in method body", sourceNode);
+                NotMemoizedCollector.Add(keywordTypeReason, MemoizationLevel.Method,
+                    "Illegal keyword", sourceNode);
             }
             else if (methodReturnMemoizationId != null) //Assuming Stryker will not inject Yields
             {
@@ -335,49 +336,12 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                         "Defined in value-typed parent, does not allow this access in lambdas",
                         sourceNode);
                 }
-                // else if (sourceNode.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Any())
-                // {
-                //     NotMemoizedCollector.Add(ReasonType.ParentIsValueType, MemoizationLevel.Method,
-                //         "Defined in struct parent, does not allow this access in lambdas",
-                //         sourceNode);
-                // }
-                // else if (hasExternalInvocations.Any())
-                // {
-                //     if (hasExternalInvocations.Any(invocation =>
-                //         {
-                //             // Get the expression being invoked
-                //             var expression = invocation.Expression;
-                //
-                //             return expression switch
-                //             {
-                //                 // For simple calls like CreateMap<TSource, TDest>()
-                //                 IdentifierNameSyntax id => id.Identifier.Text == "ForMember",
-                //                 // For member access calls like mapper.CreateMap<TSource, TDest>()
-                //                 MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text ==
-                //                                                              "ForMember",
-                //                 _ => false
-                //             };
-                //         }))
-                //     {
-                //         Console.WriteLine("");
-                //     }
-                //     // if (sourceNode is ConstructorDeclarationSyntax cds)
-                //     // {
-                //     //     if (cds.Identifier.ValueText == "MappingProfile")
-                //     //     {
-                //     //         Console.WriteLine("");
-                //     //     }
-                //     // }
-                //     NotMemoizedCollector.Add(ReasonType.UsesExternalLibrariesOrAPIs, MemoizationLevel.Method,
-                //         "Uses external api calls that cannot be confirmed to be side-effect free: " + string.Join(", ",
-                //             hasExternalInvocations.Select(s => s.ToString())),
-                //         sourceNode);
-                // }
-                // else if (dfReadOutside.Any(n => n.ContainingType.TypeKind == TypeKind.Dynamic))
-                // {
-                //     NotMemoizedCollector.Add(ReasonType.Dynamic, MemoizationLevel.Method,
-                //         "Value type is dynamic type", sourceNode);
-                // }
+                else if(hasExternalInvocations.Any())
+                {
+                    NotMemoizedCollector.Add(ReasonType.UsesExternalLibrariesOrAPIs, MemoizationLevel.Method,
+                        "Uses external api calls that cannot be confirmed to be side-effect free.",
+                        sourceNode);
+                }
                 else
                 {
 
@@ -415,7 +379,7 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                             returnType, context.Placer._injection);
 
                     blockBody = Block(ReturnStatement(invocation.WithLeadingTrivia(Space)));
-                    NotMemoizedCollector.Add(ReasonType.None, MemoizationLevel.Method, "Memoization HAS been added",
+                    NotMemoizedCollector.Add(ReasonType.None, MemoizationLevel.Method, "Added (method)",
                         sourceNode);
                 }
             }
@@ -482,11 +446,11 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
         return string.Join("::", nameParts.Where(part => !string.IsNullOrEmpty(part)).Distinct());
     }
 
-    public static bool ContainsRefOutIn<T>(SemanticModel semanticModel, T functionSyntax)
+    public static (bool, ReasonType) ContainsRefOutIn<T>(SemanticModel semanticModel, T functionSyntax)
         where T : SyntaxNode
     {
         if (functionSyntax == null)
-            return false;
+            return (false, ReasonType.None);
 
         // Walk all descendant expressions within this function-like syntax
         var expressions = functionSyntax
@@ -498,17 +462,19 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             // 1️⃣ Check if the expression’s type is a ref-like type
             var typeInfo = semanticModel.GetTypeInfo(expression);
             if (typeInfo.Type?.IsRefLikeType == true)
-                return true;
+                return (true, ReasonType.IllegalModifiersRef);
 
             // 2️⃣ Check invocation arguments for ref/out/in
             foreach (var invocation in expression.DescendantNodesAndSelf().OfType<InvocationExpressionSyntax>())
             {
                 foreach (var arg in invocation.ArgumentList.Arguments)
                 {
-                    if (arg.RefKindKeyword.IsKind(SyntaxKind.RefKeyword) ||
-                        arg.RefKindKeyword.IsKind(SyntaxKind.OutKeyword) ||
-                        arg.RefKindKeyword.IsKind(SyntaxKind.InKeyword))
-                        return true;
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.RefKeyword))
+                        return (true, ReasonType.IllegalModifiersRef);
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.OutKeyword))
+                        return (true, ReasonType.IllegalModifiersOut);
+                    if (arg.RefKindKeyword.IsKind(SyntaxKind.InKeyword))
+                        return (true, ReasonType.IllegalModifiersIn);
 
                     // Semantic check (parameter ref kind)
                     if (semanticModel.GetSymbolInfo(invocation.Expression).Symbol is IMethodSymbol method)
@@ -518,8 +484,13 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
                         if (index >= 0 && index < parameters.Length)
                         {
                             var refKind = parameters[index].RefKind;
-                            if (refKind is RefKind.Ref or RefKind.Out or RefKind.In)
-                                return true;
+
+                            if (refKind is RefKind.Ref )
+                                return (true, ReasonType.IllegalModifiersRef);
+                            if (refKind is RefKind.Out )
+                                return (true, ReasonType.IllegalModifiersOut);
+                            if (refKind is RefKind.In )
+                                return (true, ReasonType.IllegalModifiersIn);
                         }
                     }
                 }
@@ -529,13 +500,23 @@ internal abstract class BaseFunctionOrchestrator<T> : MemberDefinitionOrchestrat
             foreach (var identifier in expression.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>())
             {
                 var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
-                if (symbol is IParameterSymbol { RefKind: RefKind.Ref or RefKind.Out or RefKind.In })
-                    return true;
-                if (symbol is ILocalSymbol { RefKind: RefKind.Ref or RefKind.Out or RefKind.In })
-                    return true;
+
+                if (symbol is IParameterSymbol { RefKind: RefKind.Ref})
+                    return (true, ReasonType.IllegalModifiersRef);
+                if (symbol is IParameterSymbol { RefKind: RefKind.Out})
+                    return (true, ReasonType.IllegalModifiersOut);
+                if (symbol is IParameterSymbol { RefKind: RefKind.In})
+                    return (true, ReasonType.IllegalModifiersIn);
+
+                if (symbol is ILocalSymbol { RefKind: RefKind.Ref})
+                    return (true, ReasonType.IllegalModifiersRef);
+                if (symbol is ILocalSymbol { RefKind: RefKind.Out})
+                    return (true, ReasonType.IllegalModifiersOut);
+                if (symbol is ILocalSymbol { RefKind: RefKind.In})
+                    return (true, ReasonType.IllegalModifiersIn);
             }
         }
 
-        return false;
+        return (false, ReasonType.None);
     }
 }

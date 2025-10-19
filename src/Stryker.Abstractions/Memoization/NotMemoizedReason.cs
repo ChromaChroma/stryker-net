@@ -12,7 +12,11 @@ public enum ReasonType
     ParameterTypeNotSerializable,
     ReturnTypeNotSerializable,
     VoidReturnType,
-    IllegalModifiers, // e.g. ref, out, in, params, yield, etc
+    // IllegalModifiers, // e.g. ref, out, in, params, yield, etc
+    IllegalModifiersYield, // e.g. ref, out, in, params, yield, etc
+    IllegalModifiersRef, // e.g. ref, out, in, params, yield, etc
+    IllegalModifiersOut, // e.g. ref, out, in, params, yield, etc
+    IllegalModifiersIn, // e.g. ref, out, in, params, yield, etc
     PointerTypes, // unsafe, IntPtr, UIntPtr
     Dynamic, //  Dynamic / ExpandoObject
     NonDeterministic, // DateTime.Now, Random, Guid.NewGuid, etc
