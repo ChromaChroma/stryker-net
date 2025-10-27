@@ -227,7 +227,7 @@ public class VsTestRunnerPoolTests : VsTestMockingHelper
         mockVsTest.Setup(x => x.CancelTestRun()).Verifiable();
         SetupMockTestRun(mockVsTest, false, TestCases);
 
-        var result = runner.TestMultipleMutants(SourceProjectInfo, null, new[] { Mutant }, (_, _, _, _) => false);
+        var result = runner.TestMultipleMutants(SourceProjectInfo, null, new[] { Mutant }, (_, _, _, _, _) => false);
         // verify Abort has been called
         Mock.Verify(mockVsTest);
         // and test run is failed

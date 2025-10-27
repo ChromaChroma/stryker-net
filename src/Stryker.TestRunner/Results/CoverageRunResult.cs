@@ -6,7 +6,6 @@ using Stryker.Abstractions.Memoization;
 using Stryker.Abstractions.Testing;
 
 namespace Stryker.TestRunner.Results;
-
 public class CoverageRunResult : ICoverageRunResult
 {
     public string TestId { get; }
@@ -18,7 +17,7 @@ public class CoverageRunResult : ICoverageRunResult
 
     public MutationTestingRequirements this[int mutation] => MutationFlags.GetValueOrDefault(mutation, MutationTestingRequirements.NotCovered);
 
-
+    // Stryker disable all : This class should not be mutated
     private CoverageRunResult(string testId, CoverageConfidence confidence, IEnumerable<int> coveredMutations,
         IEnumerable<int> detectedStaticMutations, IEnumerable<int> leakedMutations, List<MetricData> memoziationData)
     {
@@ -37,10 +36,11 @@ public class CoverageRunResult : ICoverageRunResult
 
         foreach (var leakedMutation in leakedMutations)
         {
+            // Stryker disable all
             var requirement = confidence == CoverageConfidence.Exact
                 ? MutationTestingRequirements.NeedEarlyActivation
                 : MutationTestingRequirements.CoveredOutsideTest;
-
+            // Stryker disable all
             MutationFlags[leakedMutation] = requirement;
         }
 
@@ -59,8 +59,11 @@ public class CoverageRunResult : ICoverageRunResult
 
     public void Merge(ICoverageRunResult coverageRunResult)
     {
+        // Stryker disable all
         var coverage = (CoverageRunResult)coverageRunResult;
+        // Stryker disable all
         Confidence = (CoverageConfidence)Math.Min((int)Confidence, (int)coverage.Confidence);
+        // Stryker disable all
         foreach (var mutationFlag in coverage.MutationFlags)
         {
             if (MutationFlags.ContainsKey(mutationFlag.Key))
@@ -74,4 +77,5 @@ public class CoverageRunResult : ICoverageRunResult
         }
         MemoizationData.AddRange(coverage.MemoizationData);
     }
+    // Stryker restore all
 }

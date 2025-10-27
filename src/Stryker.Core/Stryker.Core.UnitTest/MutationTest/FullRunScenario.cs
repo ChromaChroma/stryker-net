@@ -193,7 +193,7 @@ internal class FullRunScenario
             {
                 foreach (var m in list)
                 {
-                    update(list, GetFailedTests(m.Id), GetCoveringTests(m.Id), TestIdentifierList.NoTest());
+                    update(list, GetFailedTests(m.Id), GetCoveringTests(m.Id), TestIdentifierList.NoTest(), []);
                 }
             }))
             .Returns(successResult);

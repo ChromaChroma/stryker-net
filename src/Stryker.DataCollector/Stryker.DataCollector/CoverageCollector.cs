@@ -43,9 +43,9 @@ namespace Stryker.DataCollector
         private ThrowingListener _throwingListener;
 
         private const string AnyId = "*";
-//         private const string TemplateForConfiguration =
-//             @"<InProcDataCollectionRunSettings><InProcDataCollectors><InProcDataCollector {0}>
-// <Configuration>{1}</Configuration></InProcDataCollector></InProcDataCollectors></InProcDataCollectionRunSettings>";
+        private const string TemplateForConfiguration =
+            @"<InProcDataCollectionRunSettings><InProcDataCollectors><InProcDataCollector {0}>
+<Configuration>{1}</Configuration></InProcDataCollector></InProcDataCollectors></InProcDataCollectionRunSettings>";
 
         public const string PropertyName = "Stryker.Coverage";
         public const string OutOfTestsPropertyName = "Stryker.Coverage.OutOfTests";
@@ -53,41 +53,41 @@ namespace Stryker.DataCollector
 
         public string MutantList => string.Join(",", _mutantTestedBy.Values.Distinct());
 
-        // public static string GetVsTestSettings(bool needCoverage,
-        //     IEnumerable<(int mutant, IEnumerable<Guid> coveringTests)> mutantTestsMap,
-        //     string helperNameSpace)
-        // {
-        //     var codeBase = typeof(CoverageCollector).GetTypeInfo().Assembly.Location;
-        //     var qualifiedName = typeof(CoverageCollector).AssemblyQualifiedName;
-        //     var friendlyName = typeof(CoverageCollector).ExtractAttribute<DataCollectorFriendlyNameAttribute>()
-        //         .FriendlyName;
-        //     // ReSharper disable once PossibleNullReferenceException
-        //     var uri = (typeof(CoverageCollector).GetTypeInfo()
-        //             .GetCustomAttributes(typeof(DataCollectorTypeUriAttribute), false).First() as
-        //         DataCollectorTypeUriAttribute).TypeUri;
-        //     var line =
-        //         $"friendlyName=\"{friendlyName}\" uri=\"{uri}\" codebase=\"{codeBase}\" assemblyQualifiedName=\"{qualifiedName}\"";
-        //     var configuration = new StringBuilder();
-        //     configuration.Append("<Parameters>");
-        //
-        //     if (needCoverage)
-        //     {
-        //         configuration.Append("<Coverage/>");
-        //     }
-        //     if (mutantTestsMap != null)
-        //     {
-        //         foreach (var (mutant, coveringTests) in mutantTestsMap)
-        //         {
-        //             configuration.AppendFormat("<Mutant id='{0}' tests='{1}'/>", mutant,
-        //                 coveringTests == null ? "" : string.Join(",", coveringTests));
-        //         }
-        //     }
-        //
-        //     configuration.Append($"<MutantControl name='{helperNameSpace}.MutantControl'/>");
-        //     configuration.Append("</Parameters>");
-        //
-        //     return string.Format(TemplateForConfiguration, line, configuration);
-        // }
+        public static string GetVsTestSettings(bool needCoverage,
+            IEnumerable<(int mutant, IEnumerable<Guid> coveringTests)> mutantTestsMap,
+            string helperNameSpace)
+        {
+            var codeBase = typeof(CoverageCollector).GetTypeInfo().Assembly.Location;
+            var qualifiedName = typeof(CoverageCollector).AssemblyQualifiedName;
+            var friendlyName = typeof(CoverageCollector).ExtractAttribute<DataCollectorFriendlyNameAttribute>()
+                .FriendlyName;
+            // ReSharper disable once PossibleNullReferenceException
+            var uri = (typeof(CoverageCollector).GetTypeInfo()
+                    .GetCustomAttributes(typeof(DataCollectorTypeUriAttribute), false).First() as
+                DataCollectorTypeUriAttribute).TypeUri;
+            var line =
+                $"friendlyName=\"{friendlyName}\" uri=\"{uri}\" codebase=\"{codeBase}\" assemblyQualifiedName=\"{qualifiedName}\"";
+            var configuration = new StringBuilder();
+            configuration.Append("<Parameters>");
+
+            if (needCoverage)
+            {
+                configuration.Append("<Coverage/>");
+            }
+            if (mutantTestsMap != null)
+            {
+                foreach (var (mutant, coveringTests) in mutantTestsMap)
+                {
+                    configuration.AppendFormat("<Mutant id='{0}' tests='{1}'/>", mutant,
+                        coveringTests == null ? "" : string.Join(",", coveringTests));
+                }
+            }
+
+            configuration.Append($"<MutantControl name='{helperNameSpace}.MutantControl'/>");
+            configuration.Append("</Parameters>");
+
+            return string.Format(TemplateForConfiguration, line, configuration);
+        }
 
         public void Initialize(IDataCollectionSink dataCollectionSink)
         {
